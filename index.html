@@ -107,6 +107,9 @@ textarea { min-height: 60px; resize: vertical; }
 .ligne { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding-block: 3px; }
 .ligne.none { color: var(--muted); }
 .libre-txt { color: var(--ok); font-weight: 600; }
+.quai.autres { grid-column: 1 / -1; }
+.quai.autres .quai-h { background: var(--surface); color: var(--ink); border-bottom: 1px solid var(--line); }
+input[type=time] { border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 8px 10px; }
 .slot-row.clic { cursor: pointer; }
 .slot-row.clic:hover { background: var(--ok-bg); }
 .slot-row .go { grid-column: 2; justify-self: start; font-size: 13px; font-weight: 700; color: var(--ok); text-transform: uppercase; letter-spacing: .06em; }
@@ -155,7 +158,7 @@ details.settings[open] summary { margin-bottom: 12px; }
 <body>
 <div class="wrap">
   <header class="board">
-    <div class="eyebrow">Témoignage public · Gare La Tour du Pin</div>
+    <div class="eyebrow">Témoignage public · La Tour du Pin</div>
     <h1>Présentoirs de la gare</h1>
     <div class="clock num" id="clock">&nbsp;</div>
   </header>
@@ -212,7 +215,7 @@ details.settings[open] summary { margin-bottom: 12px; }
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="config.js?v=202610122315"></script>
+<script src="config.js?v=202610122322"></script>
 <script>
 // Planning relevé dans JW Scheduler (semaine du 12 octobre 2026). Clé = jour JS (0 = dimanche).
 const PLANNING = {
@@ -229,7 +232,12 @@ const HORS = "hors-planning";
 const JOURS = ["dim.","lun.","mar.","mer.","jeu.","ven.","sam."];
 const CLE_KEY = "pres_cle", MOI_KEY = "pres_moi";
 
-let reglages = { presentoirs: [{ id: "p1", nom: "Présentoir 1" }, { id: "p2", nom: "Présentoir 2" }], proclamateurs: [] };
+let reglages = { presentoirs: [{ id: "p1", nom: "Présentoir 1" }, { id: "p2", nom: "Présentoir 2" }], proclamateurs: [], lieux: [] };
+const AUTRE = "autre";
+// Le champ « gare » garde bas/haut pour la gare, et le nom du lieu sinon.
+const nomLieu = (v) => (GARES[v] && GARES[v].nom) || v || "";
+const tousLieux = () => [...Object.keys(GARES), ...reglages.lieux];
+const creneauOk = (s) => /^\d\d:\d\d-\d\d:\d\d$/.test(s || "") && toMin(s.split("-")[0]) < toMin(s.split("-")[1]);
 let mouvements = [], reservations = [], membres = null;
 let role = null, cle = null, moi = null, sb = null, session = null, majA = null;
 let ui = { panel: null, weekOffset: 0, day: new Date().getDay(), confirmDel: null, busy: false, choixMoi: false, cleAdmin: null, confirmCle: false, resa: null, annul: null };
@@ -261,10 +269,10 @@ function selectedDate() { const m = mondayOf(ui.weekOffset); m.setDate(m.getDate
 function suggestSlot(gare, date) {
   const slots = (PLANNING[date.getDay()] || {})[gare] || [];
   const now = new Date();
-  if (ymd(now) !== ymd(date)) return slots[0] || HORS;
+  if (ymd(now) !== ymd(date)) return slots[0] || AUTRE;
   const n = now.getHours() * 60 + now.getMinutes();
   const hit = slots.find(s => { const [a, b] = s.split("-"); return n >= toMin(a) - 60 && n < toMin(b); });
-  return hit || slots.find(s => toMin(s.split("-")[0]) > n) || HORS;
+  return hit || slots.find(s => toMin(s.split("-")[0]) > n) || AUTRE;
 }
 const enCours = (pid) => mouvements.find(m => m.presentoir === pid && !m.retour);
 const finCreneau = (jour, s) => { const d = dateFromYmd(jour); d.setMinutes(toMin(s.split("-")[1])); return d; };
@@ -275,7 +283,7 @@ const resaSur = (pid, jour, s) => reservations.find(r => r.presentoir === pid &&
 const courteDate = (s) => dateFromYmd(s).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" });
 const aVenir = () => reservations.filter(r => !passe(r.jour, r.creneau));
 function enRetard(m) {
-  if (!m || m.creneau === HORS) return false;
+  if (!m || !creneauOk(m.creneau)) return false;
   const end = dateFromYmd(m.date); end.setMinutes(toMin(m.creneau.split("-")[1]) + 45);
   return new Date() > end;
 }
@@ -296,7 +304,7 @@ async function charger() {
   const d = await appel("pres_lire");
   role = d.role;
   const r = d.reglages || {};
-  reglages = { presentoirs: r.presentoirs?.length ? r.presentoirs : reglages.presentoirs, proclamateurs: r.proclamateurs || [] };
+  reglages = { presentoirs: r.presentoirs?.length ? r.presentoirs : reglages.presentoirs, proclamateurs: r.proclamateurs || [], lieux: r.lieux || [] };
   mouvements = (d.mouvements || []).map(m => ({ ...m, date: m.jour }));
   reservations = d.reservations || [];
   membres = d.membres;
@@ -318,7 +326,7 @@ function renderMoi() {
     const miennes = aVenir().filter(r => estDe(r, moi));
     $("moi").innerHTML = `<span>Tu es <b>${esc(moi)}</b></span><button class="link" data-action="moi-changer">Ce n'est pas moi</button>
       <div class="field" style="width:100%"><span class="lab">Mes réservations</span>
-      ${miennes.length ? miennes.map(r => `<div class="row" style="justify-content:space-between"><span class="num"><span class="tag">${esc(nomP(r.presentoir))}</span>${esc(courteDate(r.jour))} · ${slotLabel(r.creneau)} · ${esc(GARES[r.gare]?.nom || "")}</span>${boutonAnnuler(r)}</div>`).join("")
+      ${miennes.length ? miennes.map(r => `<div class="row" style="justify-content:space-between"><span class="num"><span class="tag">${esc(nomP(r.presentoir))}</span>${esc(courteDate(r.jour))} · ${slotLabel(r.creneau)} · ${esc(nomLieu(r.gare))}</span>${boutonAnnuler(r)}</div>`).join("")
         : `<span class="meta">Aucune. Choisis un jour plus bas et touche « Réserver » sur un présentoir libre.</span>`}</div>`;
     return;
   }
@@ -357,7 +365,7 @@ function renderCards() {
       <h3>${esc(p.nom)}</h3>
       <span class="pill ${late ? "late" : "out"}">${late ? "Pas encore rentré" : "Sorti"}</span>
       <div class="who">${esc(m.pris_par)}</div>
-      <div class="meta num">${esc(GARES[m.gare]?.nom || "")} · ${esc(slotLabel(m.creneau))}<br>Parti le ${esc(longDate(m.date))} à ${hm(m.sortie)}</div>
+      <div class="meta num">${esc(nomLieu(m.gare))} · ${esc(slotLabel(m.creneau))}<br>Parti le ${esc(longDate(m.date))} à ${hm(m.sortie)}</div>
       ${prochaine(p.id)}
       <button class="btn" data-action="open-retour" data-pid="${p.id}">Je le rapporte</button>
     </div>`;
@@ -369,15 +377,43 @@ function nameChips(selected, field) {
   return `<div class="chips">${names.map(n => `<button type="button" class="chip" data-action="pick" data-field="${field}" data-v="${esc(n)}" aria-pressed="${n === selected}">${esc(n)}</button>`).join("")}</div>`;
 }
 
+const effCreneau = (P) => P.creneau === AUTRE ? `${P.hd || ""}-${P.hf || ""}` : P.creneau;
+function champLieu(P) {
+  const autre = P.gare && !tousLieux().includes(P.gare);
+  return `<div class="field"><span class="lab">Lieu</span><div class="chips">
+    ${tousLieux().map(v => `<button type="button" class="chip" data-action="pick" data-field="lieu" data-v="${esc(v)}" aria-pressed="${P.gare === v}">${esc(nomLieu(v))}</button>`).join("")}
+    </div><input type="text" id="f-lieu" maxlength="60" placeholder="Autre lieu" value="${autre ? esc(P.gare) : ""}" autocomplete="off"></div>`;
+}
+function champHeure(P, slots) {
+  const libre = P.creneau === AUTRE;
+  return `<div class="field"><span class="lab">Horaire</span><div class="chips">
+    ${slots.map(s => `<button type="button" class="chip slot" data-action="pick" data-field="creneau" data-v="${s}" aria-pressed="${P.creneau === s}">${slotLabel(s)}</button>`).join("")}
+    <button type="button" class="chip" data-action="pick" data-field="creneau" data-v="${AUTRE}" aria-pressed="${libre}">${slots.length ? "Autre horaire" : "Horaire libre"}</button>
+    </div>
+    ${libre ? `<div class="row"><label for="f-hd" class="meta">De</label><input type="time" id="f-hd" value="${esc(P.hd || "")}" step="300" style="width:auto"><label for="f-hf" class="meta">à</label><input type="time" id="f-hf" value="${esc(P.hf || "")}" step="300" style="width:auto"></div>` : ""}</div>`;
+}
+const heurePile = (decal) => { const d = new Date(); d.setMinutes(0, 0, 0); d.setHours(d.getHours() + decal); return `${pad(d.getHours())}:00`; };
+// Premier créneau du planning pour ce lieu, sinon un horaire libre.
+function creneauDefaut(lieu, jour) {
+  const s = ((PLANNING[dateFromYmd(jour).getDay()] || {})[lieu] || []).find(x => !passe(jour, x));
+  return s || AUTRE;
+}
+
 function renderPanel() {
   const P = ui.panel;
   if (!P) { $("panel").innerHTML = ""; return; }
   if (P.type === "resa") {
+    const c = effCreneau(P);
     $("panel").innerHTML = `<form class="panel" id="f-resa">
-      <h3>Réserver · ${esc(courteDate(P.jour))} · ${slotLabel(P.creneau)}</h3>
-      <div class="meta">${esc(GARES[P.gare].nom)}</div>
+      ${P.libre
+        ? `<h3>Réserver un autre lieu ou horaire</h3>
+           ${champLieu(P)}
+           <div class="field"><label for="f-rdate">Jour</label><input type="date" id="f-rdate" value="${P.jour}"></div>
+           ${champHeure(P, (PLANNING[dateFromYmd(P.jour).getDay()] || {})[P.gare] || [])}`
+        : `<h3>Réserver · ${esc(courteDate(P.jour))} · ${slotLabel(P.creneau)}</h3>
+           <div class="meta">${esc(nomLieu(P.gare))}</div>`}
       <div class="field"><span class="lab">Présentoir</span><div class="chips">
-        ${reglages.presentoirs.map(p => { const r = resaSur(p.id, P.jour, P.creneau);
+        ${!creneauOk(c) ? `<span class="meta">Indique d'abord un horaire valide.</span>` : reglages.presentoirs.map(p => { const r = resaSur(p.id, P.jour, c);
           return r ? `<button type="button" class="chip" disabled>${esc(p.nom)} · pris (${esc(r.nom)})</button>`
                    : `<button type="button" class="chip" data-action="pick" data-field="rpid" data-v="${p.id}" aria-pressed="${P.pid === p.id}">${esc(p.nom)}</button>`; }).join("")}
       </div></div>
@@ -398,15 +434,10 @@ function renderPanel() {
       <div class="field"><span class="lab">Présentoir</span><div class="chips">
         ${dispo.map(p => `<button type="button" class="chip" data-action="pick" data-field="pid" data-v="${p.id}" aria-pressed="${P.pid === p.id}">${esc(p.nom)}</button>`).join("") || `<span class="meta">Les deux présentoirs sont déjà sortis.</span>`}
       </div></div>
-      <div class="field"><span class="lab">Gare</span><div class="chips">
-        ${Object.entries(GARES).map(([k, g]) => `<button type="button" class="chip" data-action="pick" data-field="gare" data-v="${k}" aria-pressed="${P.gare === k}">${g.nom}</button>`).join("")}
-      </div></div>
+      ${champLieu(P)}
       <div class="field"><label for="f-date">Jour</label><input type="date" id="f-date" value="${P.date}"></div>
-      <div class="field"><span class="lab">Créneau</span><div class="chips">
-        ${slots.map(s => `<button type="button" class="chip slot" data-action="pick" data-field="creneau" data-v="${s}" aria-pressed="${P.creneau === s}">${slotLabel(s)}</button>`).join("")}
-        <button type="button" class="chip" data-action="pick" data-field="creneau" data-v="${HORS}" aria-pressed="${P.creneau === HORS}">Hors planning</button>
-      </div></div>
-      ${(() => { const r = P.pid && P.creneau !== HORS && resaSur(P.pid, P.date, P.creneau); return r && !estDe(r, P.qui) ? `<div class="alerte">Ce présentoir est réservé par <b>${esc(r.nom)}</b> sur ce créneau. Vérifie avec cette personne avant de le prendre.</div>` : ""; })()}
+      ${champHeure(P, slots)}
+      ${(() => { const c = effCreneau(P); const r = P.pid && creneauOk(c) && resaSur(P.pid, P.date, c); return r && !estDe(r, P.qui) ? `<div class="alerte">Ce présentoir est réservé par <b>${esc(r.nom)}</b> sur ce créneau. Vérifie avec cette personne avant de le prendre.</div>` : ""; })()}
       <div class="field"><span class="lab">Pris par</span>${nameChips(P.qui, "qui")}
         <input type="text" id="f-qui" placeholder="Autre nom (prénom nom)" value="${reglages.proclamateurs.includes(P.qui) ? "" : esc(P.qui)}" autocomplete="off"></div>
       <div class="field"><label for="f-note">Remarque (facultatif)</label><textarea id="f-note" placeholder="Ex. : manque des tracts, roue qui grince…">${esc(P.note)}</textarea></div>
@@ -422,7 +453,7 @@ function renderPanel() {
       <div class="field"><span class="lab">Présentoir</span><div class="chips">
         ${dehors.map(x => `<button type="button" class="chip" data-action="pick" data-field="mid" data-v="${x.id}" aria-pressed="${P.mid === x.id}">${esc(nomP(x.presentoir))} · ${esc(x.pris_par)}</button>`).join("")}
       </div></div>
-      ${m ? `<div class="meta num">Pris par <b>${esc(m.pris_par)}</b> · ${esc(GARES[m.gare]?.nom || "")} · ${esc(slotLabel(m.creneau))} · parti à ${hm(m.sortie)}</div>` : ""}
+      ${m ? `<div class="meta num">Pris par <b>${esc(m.pris_par)}</b> · ${esc(nomLieu(m.gare))} · ${esc(slotLabel(m.creneau))} · parti à ${hm(m.sortie)}</div>` : ""}
       <div class="field"><span class="lab">Rapporté par</span>${nameChips(P.rendu, "rendu")}
         <input type="text" id="f-rendu" placeholder="Autre nom" value="${reglages.proclamateurs.includes(P.rendu) ? "" : esc(P.rendu)}" autocomplete="off"></div>
       <div class="field"><label for="f-noteR">État au retour (facultatif)</label><textarea id="f-noteR" placeholder="Ex. : publications à recompléter">${esc(P.note)}</textarea></div>
@@ -446,7 +477,6 @@ function renderWeek() {
   $("quais").innerHTML = Object.entries(GARES).map(([g, info]) => {
     const slots = plan[g] || [];
     const dayMoves = mouvements.filter(m => m.date === key && m.gare === g);
-    const extra = dayMoves.filter(m => m.creneau === HORS || !slots.includes(m.creneau));
     const rows = slots.map(s => {
       const [a, b] = s.split("-");
       const now = isToday && nowMin >= toMin(a) && nowMin < toMin(b);
@@ -457,7 +487,7 @@ function renderWeek() {
         const mv = dayMoves.find(m => m.creneau === s && m.presentoir === p.id);
         const r = resaSur(p.id, key, s);
         if (r && r.gare === g) return `<div class="ligne">${tag}<b>${esc(r.nom)}</b>${mv ? " · sorti" : ""} ${fini ? "" : boutonAnnuler(r)}</div>`;
-        if (r) return `<div class="ligne none">${tag}réservé à ${esc(GARES[r.gare].nom)}</div>`;
+        if (r) return `<div class="ligne none">${tag}réservé à ${esc(nomLieu(r.gare))}</div>`;
         if (mv) return `<div class="ligne">${tag}${esc(mv.pris_par)} · sorti</div>`;
         if (fini) return `<div class="ligne none">${tag}libre</div>`;
         libres++;
@@ -465,9 +495,22 @@ function renderWeek() {
       }).join("");
       const clic = !fini && libres > 0;
       return `<div class="slot-row ${now ? "now" : ""} ${fini ? "fini" : ""} ${clic ? "clic" : ""}" ${clic ? `data-action="slot" data-g="${g}" data-d="${key}" data-s="${s}" role="button" tabindex="0" aria-label="Réserver ${slotLabel(s)} à ${info.nom}"` : ""}><span class="t">${slotLabel(s)}</span><span class="v">${lignes}</span>${clic ? `<span class="go" aria-hidden="true">Réserver ›</span>` : ""}</div>`;
-    }).join("") + extra.map(m => `<div class="slot-row"><span class="t">Hors plan.</span><span class="v"><span class="tag">${esc(nomP(m.presentoir))}</span>${esc(m.pris_par)} · ${hm(m.sortie)}</span></div>`).join("");
+    }).join("") + lignesHors(key, v => v === g, slots);
     return `<div class="quai"><div class="quai-h"><b>${info.nom}</b><span>${info.places} places / créneau</span></div>${rows || `<div class="empty">Pas de créneau ce jour-là.</div>`}</div>`;
-  }).join("");
+  }).join("") + `<div class="quai autres"><div class="quai-h"><b>Autres lieux</b><span>horaires libres</span></div>
+      ${lignesHors(key, v => !GARES[v], []) || `<div class="empty">Rien de prévu ailleurs ce jour-là.</div>`}
+      <div class="slot-row"><span class="t"></span><button class="btn ghost small" data-action="resa-libre">＋ Réserver un autre lieu ou horaire</button></div></div>`;
+}
+// Réservations et sorties hors du planning de la gare (autres lieux, horaires libres).
+function lignesHors(key, garde, slots) {
+  const resas = reservations.filter(r => r.jour === key && garde(r.gare) && !slots.includes(r.creneau));
+  const sorties = mouvements.filter(m => m.date === key && garde(m.gare) && !slots.includes(m.creneau)
+    && !resas.some(r => r.presentoir === m.presentoir && r.creneau === m.creneau));
+  const items = [
+    ...resas.map(r => ({ debut: r.creneau, html: `<span class="tag">${esc(nomP(r.presentoir))}</span><b>${esc(r.nom)}</b>${mouvements.some(m => m.date === key && m.presentoir === r.presentoir && m.creneau === r.creneau) ? " · sorti" : ""} ${passe(r.jour, r.creneau) ? "" : boutonAnnuler(r)}`, lieu: r.gare })),
+    ...sorties.map(m => ({ debut: creneauOk(m.creneau) ? m.creneau : "99:99", html: `<span class="tag">${esc(nomP(m.presentoir))}</span>${esc(m.pris_par)} · sorti ${hm(m.sortie)}`, lieu: m.gare, hors: !creneauOk(m.creneau) })),
+  ].sort((x, y) => x.debut.localeCompare(y.debut));
+  return items.map(it => `<div class="slot-row"><span class="t">${it.hors ? "Hors plan." : slotLabel(it.debut)}</span><span class="v">${GARES[it.lieu] ? "" : `<div class="meta">${esc(nomLieu(it.lieu))}</div>`}<div class="ligne">${it.html}</div></span></div>`).join("");
 }
 
 function renderLog() {
@@ -483,7 +526,7 @@ function renderLog() {
       : `<button class="btn ghost small" data-action="del" data-mid="${m.id}" aria-label="Supprimer cette ligne">Suppr.</button>`;
     return `<div class="log-item">
       <span class="l1"><span class="tag">${esc(nomP(m.presentoir))}</span>${esc(m.pris_par)}</span>${del}
-      <span class="l2 num">${esc(GARES[m.gare]?.nom || "")} · ${esc(slotLabel(m.creneau))} · sorti ${hm(m.sortie)} → ${m.retour ? `rentré ${hm(m.retour)}${m.rendu_par && m.rendu_par !== m.pris_par ? ` (rapporté par ${esc(m.rendu_par)})` : ""}` : "<b>pas encore rentré</b>"}</span>
+      <span class="l2 num">${esc(nomLieu(m.gare))} · ${esc(slotLabel(m.creneau))} · sorti ${hm(m.sortie)} → ${m.retour ? `rentré ${hm(m.retour)}${m.rendu_par && m.rendu_par !== m.pris_par ? ` (rapporté par ${esc(m.rendu_par)})` : ""}` : "<b>pas encore rentré</b>"}</span>
       ${m.note ? `<span class="note">Sortie : ${esc(m.note)}</span>` : ""}
       ${m.note_retour ? `<span class="note">Retour : ${esc(m.note_retour)}</span>` : ""}
     </div>`;
@@ -523,6 +566,10 @@ function renderSettings() {
       ${reglages.presentoirs.map(p => `<input type="text" id="nom-${p.id}" value="${esc(p.nom)}" aria-label="Nom de ${esc(p.nom)}">`).join("")}
       <div class="row"><button class="btn small" data-action="save-noms">Enregistrer les noms</button></div>
     </div>
+    <div class="field"><span class="lab">Autres lieux proposés</span>
+      <div class="chips">${reglages.lieux.map(n => `<span class="chip">${esc(n)}<button class="x" type="button" data-action="rm-lieu" data-v="${esc(n)}" aria-label="Retirer ${esc(n)}">×</button></span>`).join("") || `<span class="meta">Aucun autre lieu.</span>`}</div>
+      <div class="row"><input type="text" id="new-lieu" maxlength="60" placeholder="Ajouter un lieu" style="flex:1;min-width:0"><button class="btn small" data-action="add-lieu">Ajouter</button></div>
+    </div>
     <div class="field"><span class="lab">Proclamateurs proposés</span>
       <div class="chips">${[...reglages.proclamateurs].sort((a, b) => a.localeCompare(b, "fr")).map(n => `<span class="chip">${esc(n)}<button class="x" type="button" data-action="rm-name" data-v="${esc(n)}" aria-label="Retirer ${esc(n)}">×</button></span>`).join("") || `<span class="meta">Aucun nom.</span>`}</div>
       <div class="row"><input type="text" id="new-name" placeholder="Ajouter un nom" style="flex:1;min-width:0"><button class="btn small" data-action="add-name">Ajouter</button></div>
@@ -545,6 +592,12 @@ function renderAll() { syncPanelInputs(); renderClock(); renderMoi(); renderCard
 // ------------------------------------------------------------ formulaires
 function syncPanelInputs() {
   const P = ui.panel; if (!P) return;
+  const lieu = $("f-lieu")?.value.trim(); if (lieu) P.gare = lieu.slice(0, 60);
+  if ($("f-hd")) P.hd = $("f-hd").value;
+  if ($("f-hf")) P.hf = $("f-hf").value;
+  if (P.type === "resa") {
+    const d = $("f-rdate")?.value; if (d && d !== P.jour) { P.jour = d; P.creneau = creneauDefaut(P.gare, d); }
+  }
   if (P.type === "sortie") {
     const d = $("f-date")?.value; if (d && d !== P.date) { P.date = d; P.creneau = suggestSlot(P.gare, dateFromYmd(d)); }
     const typed = $("f-qui")?.value.trim(); if (typed) P.qui = typed;
@@ -584,6 +637,11 @@ document.addEventListener("click", async (ev) => {
     const libre = reglages.presentoirs.find(p => !resaSur(p.id, t.dataset.d, t.dataset.s));
     ui.panel = { type: "resa", gare: t.dataset.g, jour: t.dataset.d, creneau: t.dataset.s, pid: libre ? libre.id : null, noms: moi ? [moi] : [] };
     montrerPanel();
+  } else if (a === "resa-libre") {
+    const jour = ymd(selectedDate()) < ymd(new Date()) ? ymd(new Date()) : ymd(selectedDate());
+    const lieu = reglages.lieux[0] || "bas";
+    ui.panel = { type: "resa", libre: true, gare: lieu, jour, creneau: creneauDefaut(lieu, jour), hd: heurePile(1), hf: heurePile(2), pid: null, noms: moi ? [moi] : [] };
+    montrerPanel();
   } else if (a === "ajout-nom") {
     const i = $("f-autre"), n = (i?.value || "").trim().slice(0, 80);
     if (n && ui.panel && !ui.panel.noms.includes(n)) ui.panel.noms.push(n);
@@ -597,7 +655,11 @@ document.addEventListener("click", async (ev) => {
     else if (f === "mid") { P.mid = v; }
     else if (f === "rpid") P.pid = v;
     else if (f === "noms") P.noms = P.noms.includes(v) ? P.noms.filter(n => n !== v) : [...P.noms, v];
-    else if (f === "gare") { P.gare = v; P.creneau = suggestSlot(v, dateFromYmd(P.date)); }
+    else if (f === "lieu") {
+      P.gare = v; const i = $("f-lieu"); if (i) i.value = "";
+      P.creneau = P.type === "sortie" ? suggestSlot(v, dateFromYmd(P.date)) : creneauDefaut(v, P.jour);
+      if (P.type === "resa") P.pid = (reglages.presentoirs.find(p => creneauOk(effCreneau(P)) && !resaSur(p.id, P.jour, effCreneau(P))) || {}).id || null;
+    }
     else if (f === "creneau") P.creneau = v;
     else if (f === "qui") { P.qui = v; const i = $("f-qui"); if (i) i.value = ""; }
     else if (f === "rendu") { P.rendu = v; const i = $("f-rendu"); if (i) i.value = ""; }
@@ -622,6 +684,11 @@ document.addEventListener("click", async (ev) => {
   } else if (a === "add-name") {
     const n = $("new-name").value.trim(); if (!n || reglages.proclamateurs.includes(n)) return;
     await action("pres_reglages_maj", { p_contenu: { ...reglages, proclamateurs: [...reglages.proclamateurs, n] } });
+  } else if (a === "add-lieu") {
+    const n = $("new-lieu").value.trim().slice(0, 60); if (!n || tousLieux().includes(n)) return;
+    await action("pres_reglages_maj", { p_contenu: { ...reglages, lieux: [...reglages.lieux, n] } });
+  } else if (a === "rm-lieu") {
+    await action("pres_reglages_maj", { p_contenu: { ...reglages, lieux: reglages.lieux.filter(n => n !== t.dataset.v) } });
   } else if (a === "rm-name") {
     await action("pres_reglages_maj", { p_contenu: { ...reglages, proclamateurs: reglages.proclamateurs.filter(n => n !== t.dataset.v) } });
   } else if (a === "add-mail") {
@@ -671,7 +738,10 @@ function ouvrirSortie(pid, qui) {
   // Une réservation de la personne pour aujourd'hui remplit le formulaire.
   const mienne = pid && moi && aVenir().find(r => r.presentoir === pid && r.jour === ymd(today) && estDe(r, moi));
   const gare = mienne ? mienne.gare : (mouvements.find(m => m.presentoir === pid) || {}).gare || (pid === "p2" ? "haut" : "bas");
-  ui.panel = { type: "sortie", pid, gare, date: ymd(today), creneau: mienne ? mienne.creneau : suggestSlot(gare, today), qui: qui || moi || "", note: "" };
+  const slots = (PLANNING[today.getDay()] || {})[gare] || [];
+  let creneau = mienne ? mienne.creneau : suggestSlot(gare, today), hd = heurePile(0), hf = heurePile(1);
+  if (mienne && !slots.includes(mienne.creneau)) { creneau = AUTRE; [hd, hf] = mienne.creneau.split("-"); }
+  ui.panel = { type: "sortie", pid, gare, date: ymd(today), creneau, hd, hf, qui: qui || moi || "", note: "" };
   montrerPanel();
 }
 function ouvrirRetour(pid) {
@@ -683,13 +753,15 @@ document.addEventListener("keydown", (ev) => {
   const t = ev.target.closest && ev.target.closest('[data-action="slot"]');
   if (t && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); t.click(); }
 });
-document.addEventListener("change", (ev) => { if (ev.target.id === "f-date") { syncPanelInputs(); renderPanel(); } });
+document.addEventListener("change", (ev) => { if (["f-date", "f-rdate", "f-hd", "f-hf", "f-lieu"].includes(ev.target.id)) { syncPanelInputs(); renderPanel(); } });
 
 document.addEventListener("submit", async (ev) => {
   ev.preventDefault();
   if (ev.target.id === "porte-forme") return envoyerLien();
   const P = ui.panel; if (!P) return;
   syncPanelInputs();
+  if (P.type !== "retour" && !creneauOk(effCreneau(P))) { showErr("Indique un horaire : l'heure de fin doit être après l'heure de début."); return; }
+  if (P.type !== "retour" && !String(P.gare || "").trim()) { showErr("Indique le lieu."); return; }
   if (P.type === "resa") {
     const autre = ($("f-autre")?.value || "").trim().slice(0, 80);
     if (autre && !P.noms.includes(autre)) P.noms.push(autre);
@@ -702,8 +774,8 @@ document.addEventListener("submit", async (ev) => {
   if (P.type === "retour" && !P.rendu) { showErr("Indique qui rapporte le présentoir."); return; }
   ui.busy = true; renderPanel();
   try {
-    if (P.type === "resa") await appel("pres_reserver", { p_presentoir: P.pid, p_gare: P.gare, p_jour: P.jour, p_creneau: P.creneau, p_nom: P.noms.join(", ") });
-    else if (P.type === "sortie") await appel("pres_sortie", { p_presentoir: P.pid, p_gare: P.gare, p_jour: P.date, p_creneau: P.creneau, p_pris_par: P.qui, p_note: P.note.trim() });
+    if (P.type === "resa") await appel("pres_reserver", { p_presentoir: P.pid, p_gare: P.gare, p_jour: P.jour, p_creneau: effCreneau(P), p_nom: P.noms.join(", ") });
+    else if (P.type === "sortie") await appel("pres_sortie", { p_presentoir: P.pid, p_gare: P.gare, p_jour: P.date, p_creneau: effCreneau(P), p_pris_par: P.qui, p_note: P.note.trim() });
     else await appel("pres_retour", { p_id: P.mid, p_rendu_par: P.rendu, p_note: P.note.trim() });
     ui.panel = null; ui.busy = false;
     await charger();
