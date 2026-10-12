@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#1b2744">
+<title>Présentoirs de la gare</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap">
+<style>
+/* Mise en page : une colonne façon tableau des départs — état des deux présentoirs en tête, puis les créneaux du jour, puis le journal. */
+:root {
+  --bg: #f4f5f8; --surface: #ffffff; --ink: #18223a; --muted: #5d6680; --line: #d9dde8;
+  --accent: #e0a100; --accent-ink: #18223a; --board: #1b2744; --board-ink: #f5c742;
+  --ok: #1f7a4d; --ok-bg: #e3f3ea; --warn: #a14b00; --warn-bg: #fdeedc; --out: #2a4fa8; --out-bg: #e4ebfb; --danger: #b3261e;
+  --font-display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Source Sans 3", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1424; --surface: #182036; --ink: #e8ebf3; --muted: #9aa3ba; --line: #2b3550;
+    --accent: #f5c742; --accent-ink: #18223a; --board: #0a0f1d; --board-ink: #f5c742;
+    --ok: #6fd3a0; --ok-bg: #173a2a; --warn: #f3b26b; --warn-bg: #3d2a14; --out: #93b2f5; --out-bg: #1d2a4d; --danger: #ff8a80;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16px; line-height: 1.45; }
+[hidden] { display: none !important; }
+.wrap { max-width: 640px; margin: 0 auto; padding-inline: 16px; padding-block: 0 48px; display: flex; flex-direction: column; gap: 22px; }
+h1, h2, h3 { font-family: var(--font-display); margin: 0; text-wrap: balance; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.num { font-variant-numeric: tabular-nums; }
+
+.board { background: var(--board); color: #fff; margin-inline: -16px; padding: 18px 16px 16px; display: flex; flex-direction: column; gap: 4px; }
+.board .eyebrow { font-family: var(--font-display); text-transform: uppercase; letter-spacing: .14em; font-size: 13px; color: var(--board-ink); }
+.board h1 { font-size: 30px; font-weight: 700; letter-spacing: .01em; }
+.board .clock { font-family: var(--font-display); font-size: 15px; color: #c9d1e6; }
+
+.banner { padding: 10px 14px; border-radius: 10px; background: var(--warn-bg); color: var(--warn); font-size: 15px; }
+.moi { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+.moi b { font-size: 18px; }
+
+.section-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.section-h h2 { font-size: 21px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.section-h .hint { color: var(--muted); font-size: 14px; }
+
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 460px) { .cards { grid-template-columns: 1fr; } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.card h3 { font-size: 22px; font-weight: 700; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; align-self: flex-start; }
+.pill.home { background: var(--ok-bg); color: var(--ok); }
+.pill.out { background: var(--out-bg); color: var(--out); }
+.pill.late { background: var(--warn-bg); color: var(--warn); }
+.who { font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }
+.meta { color: var(--muted); font-size: 14px; }
+.btn { border: 0; border-radius: 10px; padding: 11px 14px; font-weight: 600; font-size: 16px; background: var(--accent); color: var(--accent-ink); }
+.btn.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); }
+.btn.small { padding: 6px 10px; font-size: 14px; }
+.btn.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+.btn[disabled] { opacity: .5; cursor: default; }
+.link { background: none; border: 0; padding: 0; color: var(--out); text-decoration: underline; font-size: 15px; }
+
+.panel { background: var(--surface); border: 2px solid var(--accent); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.panel h3 { font-size: 22px; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > label, .field > .lab { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 7px 12px; font-size: 15px; }
+.chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
+.chip[aria-pressed="true"]::before { content: "✓ "; }
+.chip.slot { font-family: var(--font-display); font-weight: 600; font-variant-numeric: tabular-nums; }
+input[type=text], input[type=email], input[type=date], textarea { width: 100%; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 9px 12px; }
+textarea { min-height: 60px; resize: vertical; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+.days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.day { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 6px 0; text-align: center; font-family: var(--font-display); font-weight: 600; line-height: 1.1; }
+.day small { display: block; font-size: 12px; color: var(--muted); font-weight: 500; }
+.day[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.day[aria-pressed="true"] small { color: var(--accent-ink); }
+.day.today:not([aria-pressed="true"]) { border-color: var(--accent); }
+.weeknav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.weeknav span { font-family: var(--font-display); font-weight: 600; font-size: 17px; }
+
+.quais { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 460px) { .quais { grid-template-columns: 1fr; } }
+.quai { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; min-width: 0; }
+.quai-h { background: var(--board); color: #fff; padding: 8px 12px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.quai-h b { font-family: var(--font-display); font-size: 18px; letter-spacing: .03em; }
+.quai-h span { font-size: 12px; color: var(--board-ink); text-transform: uppercase; letter-spacing: .08em; }
+.slot-row { display: grid; grid-template-columns: 96px 1fr; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--line); align-items: start; }
+.slot-row:first-of-type { border-top: 0; }
+.slot-row .t { font-family: var(--font-display); font-weight: 600; font-variant-numeric: tabular-nums; }
+.slot-row .v { min-width: 0; font-size: 15px; overflow-wrap: anywhere; }
+.slot-row .v .none { color: var(--muted); }
+.slot-row.now { background: var(--out-bg); }
+.empty { color: var(--muted); padding: 12px; font-size: 15px; }
+
+.log { display: flex; flex-direction: column; gap: 14px; }
+.log-day h3 { font-size: 15px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 6px; }
+.log-item { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; }
+.log-item .l1 { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.log-item .l2 { color: var(--muted); font-size: 14px; grid-column: 1 / -1; }
+.log-item .note { font-size: 14px; grid-column: 1 / -1; font-style: italic; }
+.tag { font-family: var(--font-display); font-weight: 600; font-size: 13px; padding: 1px 8px; border-radius: 6px; background: var(--board); color: var(--board-ink); margin-right: 6px; }
+
+details.settings { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+details.settings summary { font-family: var(--font-display); font-weight: 700; font-size: 18px; text-transform: uppercase; letter-spacing: .04em; cursor: pointer; }
+details.settings[open] summary { margin-bottom: 12px; }
+.settings-body { display: flex; flex-direction: column; gap: 18px; }
+.chip .x { margin-left: 6px; color: var(--danger); font-weight: 700; border: 0; background: none; padding: 0; }
+.qrbox { background: #fff; padding: 14px; border-radius: 12px; align-self: flex-start; line-height: 0; }
+.qrbox img, .qrbox canvas { display: block; max-width: 100%; height: auto; }
+.copy { font-family: ui-monospace, Consolas, monospace; font-size: 12px; word-break: break-all; color: var(--muted); }
+
+.porte { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.porte h2 { font-size: 24px; }
+.porte ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+
+.affiche { position: fixed; inset: 0; background: #fff; color: #18223a; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px; text-align: center; }
+.affiche h2 { font-size: clamp(28px, 6vw, 48px); }
+.affiche p { font-size: clamp(16px, 3vw, 22px); margin: 0; max-width: 32ch; }
+.affiche .qrbig { line-height: 0; }
+.affiche .qrbig img, .affiche .qrbig canvas { width: min(70vmin, 520px); height: auto; }
+.affiche .fermer { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: 12px; background: #18223a; color: #fff; }
+@media print { .affiche .fermer { display: none; } }
+@media (prefers-reduced-motion: no-preference) { .panel { animation: rise .18s ease-out; } @keyframes rise { from { transform: translateY(6px); opacity: .6; } } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="board">
+    <div class="eyebrow">Témoignage public · Gare La Tour du Pin</div>
+    <h1>Présentoirs de la gare</h1>
+    <div class="clock num" id="clock">&nbsp;</div>
+  </header>
+  <div id="banner" class="banner" hidden></div>
+
+  <section id="porte" class="porte" hidden>
+    <h2>Accès aux présentoirs</h2>
+    <p id="porte-msg" style="margin:0">Chargement…</p>
+    <ol>
+      <li><b>Chez Mickaël :</b> scanne le QR code affiché avec l'appareil photo du téléphone. L'accès reste ensuite enregistré sur ce téléphone.</li>
+      <li><b>Ou par mail :</b> si ton adresse est inscrite, reçois un lien de connexion.</li>
+    </ol>
+    <form id="porte-forme" class="row">
+      <input type="email" id="porte-mail" placeholder="ton.adresse@exemple.fr" autocomplete="email" required style="flex:1;min-width:0">
+      <button class="btn" type="submit" id="porte-btn">Recevoir le lien</button>
+    </form>
+    <div class="meta" id="porte-retour" role="status"></div>
+  </section>
+
+  <div id="app" hidden style="display:flex;flex-direction:column;gap:22px">
+    <div id="moi" class="moi"></div>
+    <section aria-labelledby="h-etat">
+      <div class="section-h"><h2 id="h-etat">Où sont les présentoirs ?</h2><span class="hint num" id="maj"></span></div>
+      <div id="cards" class="cards" style="margin-top:10px"></div>
+    </section>
+    <div id="panel"></div>
+    <section aria-labelledby="h-quai">
+      <div class="section-h"><h2 id="h-quai">Créneaux à la gare</h2><span class="hint">Qui a pris le présentoir</span></div>
+      <div class="weeknav" style="margin-top:10px">
+        <button class="btn ghost small" data-action="week" data-d="-1" aria-label="Semaine précédente">‹ Préc.</button>
+        <span id="weeklabel" class="num"></span>
+        <button class="btn ghost small" data-action="week" data-d="1" aria-label="Semaine suivante">Suiv. ›</button>
+      </div>
+      <div id="days" class="days" style="margin-top:10px"></div>
+      <div id="quais" class="quais" style="margin-top:12px"></div>
+    </section>
+    <section aria-labelledby="h-journal">
+      <div class="section-h"><h2 id="h-journal">Journal</h2><span class="hint">30 derniers jours</span></div>
+      <div id="log" class="log" style="margin-top:10px"></div>
+    </section>
+    <details class="settings" id="settings" hidden>
+      <summary>Réglages</summary>
+      <div class="settings-body" id="settings-body"></div>
+    </details>
+    <div class="row" style="justify-content:center"><button class="link" data-action="sortir" id="sortir"></button></div>
+  </div>
+</div>
+<div id="affiche" class="affiche" hidden>
+  <button class="btn fermer" data-action="affiche-fermer">Fermer</button>
+  <h2>Présentoirs de la gare</h2>
+  <div class="qrbig" id="qrbig"></div>
+  <p>Scanne ce code avec ton téléphone pour noter quand tu prends ou rapportes un présentoir.</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="config.js?v=202610122245"></script>
+<script>
+// Planning relevé dans JW Scheduler (semaine du 12 octobre 2026). Clé = jour JS (0 = dimanche).
+const PLANNING = {
+  1: { bas: ["06:00-07:00","07:00-08:30"], haut: ["06:00-07:00","07:00-08:30"] },
+  2: { bas: ["06:00-07:00","07:00-08:30","16:30-18:00","18:00-19:00"], haut: ["06:00-07:00","07:00-08:30","16:30-18:00","18:00-19:00","19:00-20:00"] },
+  3: { bas: ["06:00-07:00","07:00-08:00","08:00-09:00","12:00-13:00","16:45-18:00","18:00-19:00"], haut: ["06:00-07:00","07:00-08:00","08:00-09:00","12:00-13:00","16:45-18:00","18:00-19:00","19:00-20:00"] },
+  4: { bas: ["06:00-07:00","07:00-08:00","08:00-09:00","16:30-18:00","18:00-19:00"], haut: ["06:00-07:00","07:00-08:00","08:00-09:00","16:30-18:00","18:00-19:00"] },
+  5: { bas: ["06:00-07:00","07:00-08:30","16:30-18:00","18:00-19:00"], haut: ["06:00-07:00","07:00-08:30","16:30-18:00","18:00-19:00","19:00-20:00"] },
+  6: { bas: ["06:00-07:00","07:00-08:00","08:00-09:00"], haut: ["06:00-07:00","07:00-08:00","08:00-09:00"] },
+  0: { bas: ["16:30-17:30","17:30-18:30","18:30-19:30"], haut: ["16:30-17:30","17:30-18:30","18:30-19:30"] },
+};
+const GARES = { bas: { nom: "Gare Le Bas", places: 3 }, haut: { nom: "Gare Le Haut", places: 2 } };
+const HORS = "hors-planning";
+const JOURS = ["dim.","lun.","mar.","mer.","jeu.","ven.","sam."];
+const CLE_KEY = "pres_cle", MOI_KEY = "pres_moi";
+
+let reglages = { presentoirs: [{ id: "p1", nom: "Présentoir 1" }, { id: "p2", nom: "Présentoir 2" }], proclamateurs: [] };
+let mouvements = [], membres = null;
+let role = null, cle = null, moi = null, sb = null, session = null, majA = null;
+let ui = { panel: null, weekOffset: 0, day: new Date().getDay(), confirmDel: null, busy: false, choixMoi: false, cleAdmin: null, confirmCle: false };
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const pad = (n) => String(n).padStart(2, "0");
+const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const hm = (iso) => iso ? new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "";
+const slotLabel = (s) => s === HORS ? "Hors planning" : s.replace("-", " – ");
+const toMin = (t) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+const nomP = (pid) => (reglages.presentoirs.find(p => p.id === pid) || {}).nom || pid;
+const dateFromYmd = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+const longDate = (s) => dateFromYmd(s).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} };
+const isAdmin = () => role === "admin";
+const lienQr = (k) => location.origin + location.pathname + "#cle=" + k;
+
+function mondayOf(offset) {
+  const d = new Date(); d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7) + offset * 7);
+  return d;
+}
+function selectedDate() { const m = mondayOf(ui.weekOffset); m.setDate(m.getDate() + ((ui.day + 6) % 7)); return m; }
+// Créneau en cours ou prochain du jour (fenêtre : 1 h avant le début jusqu'à la fin).
+function suggestSlot(gare, date) {
+  const slots = (PLANNING[date.getDay()] || {})[gare] || [];
+  const now = new Date();
+  if (ymd(now) !== ymd(date)) return slots[0] || HORS;
+  const n = now.getHours() * 60 + now.getMinutes();
+  const hit = slots.find(s => { const [a, b] = s.split("-"); return n >= toMin(a) - 60 && n < toMin(b); });
+  return hit || slots.find(s => toMin(s.split("-")[0]) > n) || HORS;
+}
+const enCours = (pid) => mouvements.find(m => m.presentoir === pid && !m.retour);
+function enRetard(m) {
+  if (!m || m.creneau === HORS) return false;
+  const end = dateFromYmd(m.date); end.setMinutes(toMin(m.creneau.split("-")[1]) + 45);
+  return new Date() > end;
+}
+function banner(msg) { const b = $("banner"); b.textContent = msg || ""; b.hidden = !msg; }
+
+// ------------------------------------------------------------ accès aux données
+function codeErreur(error) {
+  const m = (error && (error.message || "")) + "";
+  for (const c of ["acces_refuse", "reserve_admin", "deja_sorti", "deja_rentre", "nom_invalide", "mail_invalide", "pas_soi_meme"]) if (m.includes(c)) return c;
+  return "autre";
+}
+async function appel(fn, args) {
+  const { data, error } = await sb.rpc(fn, { p_cle: cle, ...(args || {}) });
+  if (error) { const e = new Error(error.message); e.code = codeErreur(error); throw e; }
+  return data;
+}
+async function charger() {
+  const d = await appel("pres_lire");
+  role = d.role;
+  const r = d.reglages || {};
+  reglages = { presentoirs: r.presentoirs?.length ? r.presentoirs : reglages.presentoirs, proclamateurs: r.proclamateurs || [] };
+  mouvements = (d.mouvements || []).map(m => ({ ...m, date: m.jour }));
+  membres = d.membres;
+  majA = new Date();
+  banner("");
+  renderAll();
+}
+
+// ------------------------------------------------------------ rendu
+function renderClock() {
+  const d = new Date();
+  $("clock").textContent = d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" }) + " · " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  $("maj").textContent = majA ? "À jour à " + majA.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "";
+}
+
+function renderMoi() {
+  const names = [...reglages.proclamateurs].sort((a, b) => a.localeCompare(b, "fr"));
+  if (moi && !ui.choixMoi) {
+    $("moi").innerHTML = `<span>Tu pointes en tant que <b>${esc(moi)}</b></span><button class="link" data-action="moi-changer">Ce n'est pas moi</button>`;
+    return;
+  }
+  $("moi").innerHTML = `<div class="field" style="width:100%"><span class="lab">Qui es-tu ?</span>
+    <div class="chips">${names.map(n => `<button type="button" class="chip" data-action="moi-choisir" data-v="${esc(n)}" aria-pressed="${n === moi}">${esc(n)}</button>`).join("")}</div>
+    <div class="row"><input type="text" id="moi-autre" placeholder="Mon nom n'est pas dans la liste" autocomplete="name" style="flex:1;min-width:0"><button class="btn small" data-action="moi-autre">C'est moi</button></div>
+    <span class="meta">Ton nom reste enregistré sur ce téléphone.</span></div>`;
+}
+
+function renderCards() {
+  $("cards").innerHTML = reglages.presentoirs.map(p => {
+    const m = enCours(p.id);
+    if (!m) {
+      const last = mouvements.find(x => x.presentoir === p.id);
+      return `<div class="card">
+        <h3>${esc(p.nom)}</h3>
+        <span class="pill home">À la maison</span>
+        <div class="meta">${last ? `Rentré le ${esc(longDate(last.date))} à ${hm(last.retour)}${last.rendu_par ? ` par ${esc(last.rendu_par)}` : ""}` : "Aucune sortie enregistrée."}</div>
+        <button class="btn" data-action="open-sortie" data-pid="${p.id}">Je le prends</button>
+      </div>`;
+    }
+    const late = enRetard(m);
+    return `<div class="card">
+      <h3>${esc(p.nom)}</h3>
+      <span class="pill ${late ? "late" : "out"}">${late ? "Pas encore rentré" : "Sorti"}</span>
+      <div class="who">${esc(m.pris_par)}</div>
+      <div class="meta num">${esc(GARES[m.gare]?.nom || "")} · ${esc(slotLabel(m.creneau))}<br>Parti le ${esc(longDate(m.date))} à ${hm(m.sortie)}</div>
+      <button class="btn" data-action="open-retour" data-pid="${p.id}">Je le rapporte</button>
+    </div>`;
+  }).join("");
+}
+
+function nameChips(selected, field) {
+  const names = [...reglages.proclamateurs].sort((a, b) => a.localeCompare(b, "fr"));
+  return `<div class="chips">${names.map(n => `<button type="button" class="chip" data-action="pick" data-field="${field}" data-v="${esc(n)}" aria-pressed="${n === selected}">${esc(n)}</button>`).join("")}</div>`;
+}
+
+function renderPanel() {
+  const P = ui.panel;
+  if (!P) { $("panel").innerHTML = ""; return; }
+  if (P.type === "sortie") {
+    const slots = (PLANNING[dateFromYmd(P.date).getDay()] || {})[P.gare] || [];
+    $("panel").innerHTML = `<form class="panel" id="f-sortie">
+      <h3>Je prends · ${esc(nomP(P.pid))}</h3>
+      <div class="field"><span class="lab">Gare</span><div class="chips">
+        ${Object.entries(GARES).map(([k, g]) => `<button type="button" class="chip" data-action="pick" data-field="gare" data-v="${k}" aria-pressed="${P.gare === k}">${g.nom}</button>`).join("")}
+      </div></div>
+      <div class="field"><label for="f-date">Jour</label><input type="date" id="f-date" value="${P.date}"></div>
+      <div class="field"><span class="lab">Créneau</span><div class="chips">
+        ${slots.map(s => `<button type="button" class="chip slot" data-action="pick" data-field="creneau" data-v="${s}" aria-pressed="${P.creneau === s}">${slotLabel(s)}</button>`).join("")}
+        <button type="button" class="chip" data-action="pick" data-field="creneau" data-v="${HORS}" aria-pressed="${P.creneau === HORS}">Hors planning</button>
+      </div></div>
+      <div class="field"><span class="lab">Pris par</span>${nameChips(P.qui, "qui")}
+        <input type="text" id="f-qui" placeholder="Autre nom (prénom nom)" value="${reglages.proclamateurs.includes(P.qui) ? "" : esc(P.qui)}" autocomplete="off"></div>
+      <div class="field"><label for="f-note">Remarque (facultatif)</label><textarea id="f-note" placeholder="Ex. : manque des tracts, roue qui grince…">${esc(P.note)}</textarea></div>
+      <div class="row"><button class="btn" type="submit" ${ui.busy ? "disabled" : ""}>Valider la sortie</button><button class="btn ghost" type="button" data-action="close">Annuler</button></div>
+      <div class="meta" id="f-err" role="alert"></div>
+    </form>`;
+  } else {
+    const m = mouvements.find(x => x.id === P.mid);
+    if (!m) { ui.panel = null; $("panel").innerHTML = ""; return; }
+    $("panel").innerHTML = `<form class="panel" id="f-retour">
+      <h3>Je rapporte · ${esc(nomP(m.presentoir))}</h3>
+      <div class="meta num">Pris par <b>${esc(m.pris_par)}</b> · ${esc(GARES[m.gare]?.nom || "")} · ${esc(slotLabel(m.creneau))} · parti à ${hm(m.sortie)}</div>
+      <div class="field"><span class="lab">Rapporté par</span>${nameChips(P.rendu, "rendu")}
+        <input type="text" id="f-rendu" placeholder="Autre nom" value="${reglages.proclamateurs.includes(P.rendu) ? "" : esc(P.rendu)}" autocomplete="off"></div>
+      <div class="field"><label for="f-noteR">État au retour (facultatif)</label><textarea id="f-noteR" placeholder="Ex. : publications à recompléter">${esc(P.note)}</textarea></div>
+      <div class="row"><button class="btn" type="submit" ${ui.busy ? "disabled" : ""}>Valider le retour</button><button class="btn ghost" type="button" data-action="close">Annuler</button></div>
+      <div class="meta" id="f-err" role="alert"></div>
+    </form>`;
+  }
+}
+
+function renderWeek() {
+  const mon = mondayOf(ui.weekOffset);
+  const sun = new Date(mon); sun.setDate(sun.getDate() + 6);
+  $("weeklabel").textContent = `${mon.getDate()} – ${sun.toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}`;
+  const today = ymd(new Date());
+  $("days").innerHTML = [1, 2, 3, 4, 5, 6, 0].map((jd, i) => {
+    const d = new Date(mon); d.setDate(d.getDate() + i);
+    return `<button class="day ${ymd(d) === today ? "today" : ""}" data-action="day" data-d="${jd}" aria-pressed="${ui.day === jd}">${JOURS[jd]}<small class="num">${d.getDate()}</small></button>`;
+  }).join("");
+  const date = selectedDate(), key = ymd(date), plan = PLANNING[date.getDay()] || {};
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes(), isToday = key === today;
+  $("quais").innerHTML = Object.entries(GARES).map(([g, info]) => {
+    const slots = plan[g] || [];
+    const dayMoves = mouvements.filter(m => m.date === key && m.gare === g);
+    const extra = dayMoves.filter(m => m.creneau === HORS || !slots.includes(m.creneau));
+    const rows = slots.map(s => {
+      const ms = dayMoves.filter(m => m.creneau === s);
+      const [a, b] = s.split("-");
+      const now = isToday && nowMin >= toMin(a) && nowMin < toMin(b);
+      return `<div class="slot-row ${now ? "now" : ""}"><span class="t">${slotLabel(s)}</span><span class="v">${ms.length ? ms.map(m => `<span class="tag">${esc(nomP(m.presentoir))}</span>${esc(m.pris_par)}`).join("<br>") : `<span class="none">—</span>`}</span></div>`;
+    }).join("") + extra.map(m => `<div class="slot-row"><span class="t">Hors plan.</span><span class="v"><span class="tag">${esc(nomP(m.presentoir))}</span>${esc(m.pris_par)} · ${hm(m.sortie)}</span></div>`).join("");
+    return `<div class="quai"><div class="quai-h"><b>${info.nom}</b><span>${info.places} places / créneau</span></div>${rows || `<div class="empty">Pas de créneau ce jour-là.</div>`}</div>`;
+  }).join("");
+}
+
+function renderLog() {
+  const limit = new Date(); limit.setDate(limit.getDate() - 30); const lim = ymd(limit);
+  const recent = mouvements.filter(m => m.date >= lim);
+  if (!recent.length) { $("log").innerHTML = `<div class="meta">Aucune sortie pour l'instant. Quand quelqu'un touche « Je le prends », la sortie apparaît ici avec l'heure de départ puis de retour.</div>`; return; }
+  const byDay = {};
+  recent.forEach(m => (byDay[m.date] = byDay[m.date] || []).push(m));
+  $("log").innerHTML = Object.keys(byDay).sort().reverse().map(d => `<div class="log-day"><h3>${esc(longDate(d))}</h3><div class="log">${byDay[d].map(m => {
+    const confirm = ui.confirmDel === m.id;
+    const del = !isAdmin() ? "<span></span>" : confirm
+      ? `<span class="row"><button class="btn danger small" data-action="del-yes" data-mid="${m.id}">Supprimer</button><button class="btn ghost small" data-action="del-no">Garder</button></span>`
+      : `<button class="btn ghost small" data-action="del" data-mid="${m.id}" aria-label="Supprimer cette ligne">Suppr.</button>`;
+    return `<div class="log-item">
+      <span class="l1"><span class="tag">${esc(nomP(m.presentoir))}</span>${esc(m.pris_par)}</span>${del}
+      <span class="l2 num">${esc(GARES[m.gare]?.nom || "")} · ${esc(slotLabel(m.creneau))} · sorti ${hm(m.sortie)} → ${m.retour ? `rentré ${hm(m.retour)}${m.rendu_par && m.rendu_par !== m.pris_par ? ` (rapporté par ${esc(m.rendu_par)})` : ""}` : "<b>pas encore rentré</b>"}</span>
+      ${m.note ? `<span class="note">Sortie : ${esc(m.note)}</span>` : ""}
+      ${m.note_retour ? `<span class="note">Retour : ${esc(m.note_retour)}</span>` : ""}
+    </div>`;
+  }).join("")}</div></div>`).join("");
+}
+
+function renderSettings() {
+  $("settings").hidden = !isAdmin();
+  if (!isAdmin()) return;
+  const lien = ui.cleAdmin ? lienQr(ui.cleAdmin) : "";
+  $("settings-body").innerHTML = `
+    <div class="field"><span class="lab">QR code à afficher chez toi</span>
+      ${ui.cleAdmin ? `<div class="qrbox" id="qr"></div>
+        <div class="row"><button class="btn small" data-action="affiche">Afficher en grand</button><button class="btn ghost small" data-action="copier">Copier le lien</button></div>
+        <span class="copy" id="lien">${esc(lien)}</span>
+        <span class="meta">Ce lien ouvre l'accès comme le QR code : ne l'envoie qu'aux proclamateurs.</span>
+        ${ui.confirmCle
+          ? `<div class="row"><span class="meta">L'ancien QR code ne marchera plus, ni sur les téléphones qui l'ont déjà scanné.</span><button class="btn danger small" data-action="cle-oui">Changer le code</button><button class="btn ghost small" data-action="cle-non">Garder</button></div>`
+          : `<div class="row"><button class="link" data-action="cle-changer">Changer le QR code…</button></div>`}`
+        : `<span class="meta">Chargement du QR code…</span>`}
+    </div>
+    <div class="field"><span class="lab">Noms des présentoirs</span>
+      ${reglages.presentoirs.map(p => `<input type="text" id="nom-${p.id}" value="${esc(p.nom)}" aria-label="Nom de ${esc(p.nom)}">`).join("")}
+      <div class="row"><button class="btn small" data-action="save-noms">Enregistrer les noms</button></div>
+    </div>
+    <div class="field"><span class="lab">Proclamateurs proposés</span>
+      <div class="chips">${[...reglages.proclamateurs].sort((a, b) => a.localeCompare(b, "fr")).map(n => `<span class="chip">${esc(n)}<button class="x" type="button" data-action="rm-name" data-v="${esc(n)}" aria-label="Retirer ${esc(n)}">×</button></span>`).join("") || `<span class="meta">Aucun nom.</span>`}</div>
+      <div class="row"><input type="text" id="new-name" placeholder="Ajouter un nom" style="flex:1;min-width:0"><button class="btn small" data-action="add-name">Ajouter</button></div>
+    </div>
+    <div class="field"><span class="lab">Adresses mail autorisées</span>
+      <div class="chips">${(membres || []).map(x => `<span class="chip">${esc(x.email)}${x.admin ? " · admin" : ""}${x.email === (session?.user?.email || "").toLowerCase() ? "" : `<button class="x" type="button" data-action="rm-mail" data-v="${esc(x.email)}" aria-label="Retirer ${esc(x.email)}">×</button>`}</span>`).join("")}</div>
+      <div class="row"><input type="email" id="new-mail" placeholder="adresse@exemple.fr" style="flex:1;min-width:0"><button class="btn small" data-action="add-mail">Autoriser</button></div>
+      <span class="meta">Ces personnes peuvent se connecter par un lien reçu par mail, sans le QR code.</span>
+    </div>`;
+  if (ui.cleAdmin && window.QRCode) new QRCode($("qr"), { text: lien, width: 220, height: 220, colorDark: "#000000", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
+  else if (!ui.cleAdmin) appel("pres_voir_cle").then(k => { ui.cleAdmin = k; renderSettings(); }).catch(() => {});
+}
+
+function renderSortir() {
+  $("sortir").textContent = session ? `Se déconnecter (${session.user.email})` : "Oublier l'accès sur ce téléphone";
+}
+
+function renderAll() { syncPanelInputs(); renderClock(); renderMoi(); renderCards(); renderPanel(); renderWeek(); renderLog(); renderSettings(); renderSortir(); }
+
+// ------------------------------------------------------------ formulaires
+function syncPanelInputs() {
+  const P = ui.panel; if (!P) return;
+  if (P.type === "sortie") {
+    const d = $("f-date")?.value; if (d && d !== P.date) { P.date = d; P.creneau = suggestSlot(P.gare, dateFromYmd(d)); }
+    const typed = $("f-qui")?.value.trim(); if (typed) P.qui = typed;
+    P.note = $("f-note")?.value ?? P.note;
+  } else {
+    const typed = $("f-rendu")?.value.trim(); if (typed) P.rendu = typed;
+    P.note = $("f-noteR")?.value ?? P.note;
+  }
+}
+function showErr(msg) { const e = $("f-err"); if (e) e.textContent = msg; }
+const MSG = {
+  acces_refuse: "Ton accès n'est plus valable : rescanne le QR code chez Mickaël.",
+  deja_sorti: "Quelqu'un vient de noter ce présentoir comme sorti.",
+  deja_rentre: "Ce présentoir vient d'être noté comme rentré.",
+  nom_invalide: "Indique un nom (80 caractères au plus).",
+  reserve_admin: "Cette action est réservée à Mickaël.",
+  mail_invalide: "Cette adresse mail n'est pas valide.",
+  pas_soi_meme: "Tu ne peux pas retirer ta propre adresse.",
+  autre: "L'enregistrement n'a pas abouti. Vérifie la connexion et réessaie.",
+};
+async function action(fn, args) {
+  try { await appel(fn, args); await charger(); return true; }
+  catch (e) { banner(MSG[e.code] || MSG.autre); return false; }
+}
+
+document.addEventListener("click", async (ev) => {
+  const t = ev.target.closest("[data-action]"); if (!t) return;
+  const a = t.dataset.action;
+  if (a === "open-sortie") {
+    const pid = t.dataset.pid;
+    const lastGare = (mouvements.find(m => m.presentoir === pid) || {}).gare || (pid === "p2" ? "haut" : "bas");
+    const today = new Date();
+    ui.panel = { type: "sortie", pid, gare: lastGare, date: ymd(today), creneau: suggestSlot(lastGare, today), qui: moi || "", note: "" };
+    renderPanel(); $("panel").scrollIntoView({ behavior: "smooth", block: "start" });
+  } else if (a === "open-retour") {
+    const m = enCours(t.dataset.pid); if (!m) return;
+    ui.panel = { type: "retour", mid: m.id, rendu: moi || m.pris_par, note: "" };
+    renderPanel(); $("panel").scrollIntoView({ behavior: "smooth", block: "start" });
+  } else if (a === "close") { ui.panel = null; renderPanel(); }
+  else if (a === "pick") {
+    const P = ui.panel; if (!P) return;
+    syncPanelInputs();
+    const f = t.dataset.field, v = t.dataset.v;
+    if (f === "gare") { P.gare = v; P.creneau = suggestSlot(v, dateFromYmd(P.date)); }
+    else if (f === "creneau") P.creneau = v;
+    else if (f === "qui") { P.qui = v; const i = $("f-qui"); if (i) i.value = ""; }
+    else if (f === "rendu") { P.rendu = v; const i = $("f-rendu"); if (i) i.value = ""; }
+    renderPanel();
+  } else if (a === "moi-changer") { ui.choixMoi = true; renderMoi(); }
+  else if (a === "moi-choisir") { moi = t.dataset.v; lsSet(MOI_KEY, moi); ui.choixMoi = false; renderMoi(); }
+  else if (a === "moi-autre") {
+    const n = $("moi-autre").value.trim(); if (!n) return;
+    moi = n.slice(0, 80); lsSet(MOI_KEY, moi); ui.choixMoi = false; renderMoi();
+  }
+  else if (a === "week") { ui.weekOffset += Number(t.dataset.d); renderWeek(); }
+  else if (a === "day") { ui.day = Number(t.dataset.d); renderWeek(); }
+  else if (a === "del") { ui.confirmDel = t.dataset.mid; renderLog(); }
+  else if (a === "del-no") { ui.confirmDel = null; renderLog(); }
+  else if (a === "del-yes") { const id = t.dataset.mid; ui.confirmDel = null; await action("pres_supprimer", { p_id: id }); }
+  else if (a === "save-noms") {
+    const next = { ...reglages, presentoirs: reglages.presentoirs.map(p => ({ ...p, nom: ($("nom-" + p.id).value.trim() || p.nom) })) };
+    await action("pres_reglages_maj", { p_contenu: next });
+  } else if (a === "add-name") {
+    const n = $("new-name").value.trim(); if (!n || reglages.proclamateurs.includes(n)) return;
+    await action("pres_reglages_maj", { p_contenu: { ...reglages, proclamateurs: [...reglages.proclamateurs, n] } });
+  } else if (a === "rm-name") {
+    await action("pres_reglages_maj", { p_contenu: { ...reglages, proclamateurs: reglages.proclamateurs.filter(n => n !== t.dataset.v) } });
+  } else if (a === "add-mail") {
+    const v = $("new-mail").value.trim(); if (!v) return;
+    await action("pres_membre", { p_email: v, p_admin: false, p_retirer: false });
+  } else if (a === "rm-mail") {
+    await action("pres_membre", { p_email: t.dataset.v, p_admin: false, p_retirer: true });
+  } else if (a === "cle-changer") { ui.confirmCle = true; renderSettings(); }
+  else if (a === "cle-non") { ui.confirmCle = false; renderSettings(); }
+  else if (a === "cle-oui") {
+    try { ui.cleAdmin = await appel("pres_nouvelle_cle"); ui.confirmCle = false; banner(""); renderSettings(); }
+    catch (e) { banner(MSG[e.code] || MSG.autre); }
+  } else if (a === "copier") {
+    const lien = lienQr(ui.cleAdmin);
+    try { await navigator.clipboard.writeText(lien); t.textContent = "Lien copié"; }
+    catch (e) { const r = document.createRange(); r.selectNodeContents($("lien")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+  } else if (a === "affiche") {
+    $("qrbig").innerHTML = "";
+    new QRCode($("qrbig"), { text: lienQr(ui.cleAdmin), width: 520, height: 520, colorDark: "#000000", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
+    $("affiche").hidden = false;
+  } else if (a === "affiche-fermer") { $("affiche").hidden = true; }
+  else if (a === "sortir") {
+    if (session) await sb.auth.signOut();
+    lsSet(CLE_KEY, null); lsSet(MOI_KEY, null);
+    location.reload();
+  }
+});
+document.addEventListener("change", (ev) => { if (ev.target.id === "f-date") { syncPanelInputs(); renderPanel(); } });
+
+document.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if (ev.target.id === "porte-forme") return envoyerLien();
+  const P = ui.panel; if (!P) return;
+  syncPanelInputs();
+  if (P.type === "sortie" && !P.qui) { showErr("Indique qui prend le présentoir."); return; }
+  if (P.type === "retour" && !P.rendu) { showErr("Indique qui rapporte le présentoir."); return; }
+  ui.busy = true; renderPanel();
+  try {
+    if (P.type === "sortie") await appel("pres_sortie", { p_presentoir: P.pid, p_gare: P.gare, p_jour: P.date, p_creneau: P.creneau, p_pris_par: P.qui, p_note: P.note.trim() });
+    else await appel("pres_retour", { p_id: P.mid, p_rendu_par: P.rendu, p_note: P.note.trim() });
+    ui.panel = null; ui.busy = false;
+    await charger();
+  } catch (e) {
+    ui.busy = false; renderPanel(); showErr(MSG[e.code] || MSG.autre);
+    if (e.code === "deja_sorti" || e.code === "deja_rentre") charger().catch(() => {});
+  }
+});
+
+// ------------------------------------------------------------ porte d'entrée
+async function envoyerLien() {
+  const mail = $("porte-mail").value.trim(); if (!mail) return;
+  $("porte-btn").disabled = true; $("porte-retour").textContent = "Envoi…";
+  const { error } = await sb.auth.signInWithOtp({ email: mail, options: { emailRedirectTo: location.origin + location.pathname } });
+  $("porte-btn").disabled = false;
+  $("porte-retour").textContent = error
+    ? "Le lien n'est pas parti : " + (error.message || "réessaie dans une minute.")
+    : `Lien envoyé à ${mail}. Ouvre le mail sur ce téléphone et touche le lien (pense à regarder dans les indésirables).`;
+}
+function montrerPorte(msg) {
+  $("app").hidden = true; $("porte").hidden = false;
+  $("porte-msg").textContent = msg;
+}
+function montrerApp() { $("porte").hidden = true; $("app").hidden = false; }
+
+async function entrer() {
+  try { await charger(); montrerApp(); return true; }
+  catch (e) {
+    if (e.code === "acces_refuse") {
+      if (cle) { lsSet(CLE_KEY, null); cle = null; }
+      montrerPorte(session
+        ? `L'adresse ${session.user.email} n'est pas encore autorisée. Demande à Mickaël de l'ajouter, ou scanne le QR code chez lui.`
+        : "Pour noter qui prend les présentoirs, il faut d'abord ouvrir l'accès sur ce téléphone.");
+    } else montrerPorte("Le service ne répond pas pour l'instant. Vérifie la connexion internet et recharge la page.");
+    return false;
+  }
+}
+
+async function demarrer() {
+  renderClock();
+  const m = location.hash.match(/cle=([0-9a-f]{24,})/i);
+  if (m) { cle = m[1]; lsSet(CLE_KEY, cle); history.replaceState(null, "", location.pathname + location.search); }
+  else cle = lsGet(CLE_KEY);
+  moi = lsGet(MOI_KEY);
+  if (!window.supabase || !window.CONFIG) { montrerPorte("La page n'a pas pu charger ses outils. Vérifie la connexion internet et recharge."); return; }
+  sb = window.supabase.createClient(window.CONFIG.url, window.CONFIG.cle, { auth: { detectSessionInUrl: true, persistSession: true, autoRefreshToken: true } });
+  const r = await sb.auth.getSession(); session = r.data?.session || null;
+  let dedans = await entrer();
+  sb.auth.onAuthStateChange((evt, s) => {
+    session = s || null;
+    if (evt === "SIGNED_IN" && !dedans) entrer().then(ok => { dedans = ok; });
+  });
+  setInterval(() => { renderClock(); if (dedans && !document.hidden && !ui.panel) charger().catch(() => banner("Mise à jour impossible pour l'instant : la page réessaie toute seule.")); }, 20000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && dedans && !ui.panel) charger().catch(() => {}); });
+}
+demarrer();
+</script>
+</body>
+</html>
