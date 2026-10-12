@@ -102,6 +102,11 @@ textarea { min-height: 60px; resize: vertical; }
 .slot-row .v { min-width: 0; font-size: 15px; overflow-wrap: anywhere; }
 .slot-row .v .none { color: var(--muted); }
 .slot-row.now { background: var(--out-bg); }
+.slot-row.fini .t { color: var(--muted); }
+.ligne { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding-block: 3px; }
+.ligne.none { color: var(--muted); }
+.btn.libre { border-color: var(--ok); color: var(--ok); background: var(--ok-bg); }
+.alerte { color: var(--warn); background: var(--warn-bg); border-radius: 8px; padding: 6px 10px; font-size: 14px; }
 .empty { color: var(--muted); padding: 12px; font-size: 15px; }
 
 .log { display: flex; flex-direction: column; gap: 14px; }
@@ -166,7 +171,7 @@ details.settings[open] summary { margin-bottom: 12px; }
     </section>
     <div id="panel"></div>
     <section aria-labelledby="h-quai">
-      <div class="section-h"><h2 id="h-quai">Créneaux à la gare</h2><span class="hint">Qui a pris le présentoir</span></div>
+      <div class="section-h"><h2 id="h-quai">Réserver un présentoir</h2><span class="hint">Choisis le jour, puis un présentoir libre</span></div>
       <div class="weeknav" style="margin-top:10px">
         <button class="btn ghost small" data-action="week" data-d="-1" aria-label="Semaine précédente">‹ Préc.</button>
         <span id="weeklabel" class="num"></span>
@@ -195,7 +200,7 @@ details.settings[open] summary { margin-bottom: 12px; }
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="config.js?v=202610122245"></script>
+<script src="config.js?v=202610122305"></script>
 <script>
 // Planning relevé dans JW Scheduler (semaine du 12 octobre 2026). Clé = jour JS (0 = dimanche).
 const PLANNING = {
@@ -213,9 +218,9 @@ const JOURS = ["dim.","lun.","mar.","mer.","jeu.","ven.","sam."];
 const CLE_KEY = "pres_cle", MOI_KEY = "pres_moi";
 
 let reglages = { presentoirs: [{ id: "p1", nom: "Présentoir 1" }, { id: "p2", nom: "Présentoir 2" }], proclamateurs: [] };
-let mouvements = [], membres = null;
+let mouvements = [], reservations = [], membres = null;
 let role = null, cle = null, moi = null, sb = null, session = null, majA = null;
-let ui = { panel: null, weekOffset: 0, day: new Date().getDay(), confirmDel: null, busy: false, choixMoi: false, cleAdmin: null, confirmCle: false };
+let ui = { panel: null, weekOffset: 0, day: new Date().getDay(), confirmDel: null, busy: false, choixMoi: false, cleAdmin: null, confirmCle: false, resa: null, annul: null };
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -248,6 +253,13 @@ function suggestSlot(gare, date) {
   return hit || slots.find(s => toMin(s.split("-")[0]) > n) || HORS;
 }
 const enCours = (pid) => mouvements.find(m => m.presentoir === pid && !m.retour);
+const finCreneau = (jour, s) => { const d = dateFromYmd(jour); d.setMinutes(toMin(s.split("-")[1])); return d; };
+const passe = (jour, s) => finCreneau(jour, s) <= new Date();
+const chevauche = (a, b) => toMin(a.split("-")[0]) < toMin(b.split("-")[1]) && toMin(b.split("-")[0]) < toMin(a.split("-")[1]);
+// La réservation qui occupe ce présentoir sur ce créneau, quelle que soit la gare.
+const resaSur = (pid, jour, s) => reservations.find(r => r.presentoir === pid && r.jour === jour && chevauche(r.creneau, s));
+const courteDate = (s) => dateFromYmd(s).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" });
+const aVenir = () => reservations.filter(r => !passe(r.jour, r.creneau));
 function enRetard(m) {
   if (!m || m.creneau === HORS) return false;
   const end = dateFromYmd(m.date); end.setMinutes(toMin(m.creneau.split("-")[1]) + 45);
@@ -272,6 +284,7 @@ async function charger() {
   const r = d.reglages || {};
   reglages = { presentoirs: r.presentoirs?.length ? r.presentoirs : reglages.presentoirs, proclamateurs: r.proclamateurs || [] };
   mouvements = (d.mouvements || []).map(m => ({ ...m, date: m.jour }));
+  reservations = d.reservations || [];
   membres = d.membres;
   majA = new Date();
   banner("");
@@ -288,13 +301,28 @@ function renderClock() {
 function renderMoi() {
   const names = [...reglages.proclamateurs].sort((a, b) => a.localeCompare(b, "fr"));
   if (moi && !ui.choixMoi) {
-    $("moi").innerHTML = `<span>Tu pointes en tant que <b>${esc(moi)}</b></span><button class="link" data-action="moi-changer">Ce n'est pas moi</button>`;
+    const miennes = aVenir().filter(r => r.nom === moi);
+    $("moi").innerHTML = `<span>Tu es <b>${esc(moi)}</b></span><button class="link" data-action="moi-changer">Ce n'est pas moi</button>
+      <div class="field" style="width:100%"><span class="lab">Mes réservations</span>
+      ${miennes.length ? miennes.map(r => `<div class="row" style="justify-content:space-between"><span class="num"><span class="tag">${esc(nomP(r.presentoir))}</span>${esc(courteDate(r.jour))} · ${slotLabel(r.creneau)} · ${esc(GARES[r.gare]?.nom || "")}</span>${boutonAnnuler(r)}</div>`).join("")
+        : `<span class="meta">Aucune. Choisis un jour plus bas et touche « Réserver » sur un présentoir libre.</span>`}</div>`;
     return;
   }
   $("moi").innerHTML = `<div class="field" style="width:100%"><span class="lab">Qui es-tu ?</span>
     <div class="chips">${names.map(n => `<button type="button" class="chip" data-action="moi-choisir" data-v="${esc(n)}" aria-pressed="${n === moi}">${esc(n)}</button>`).join("")}</div>
     <div class="row"><input type="text" id="moi-autre" placeholder="Mon nom n'est pas dans la liste" autocomplete="name" style="flex:1;min-width:0"><button class="btn small" data-action="moi-autre">C'est moi</button></div>
     <span class="meta">Ton nom reste enregistré sur ce téléphone.</span></div>`;
+}
+
+function boutonAnnuler(r) {
+  if (!(r.nom === moi || isAdmin())) return "";
+  return ui.annul === r.id
+    ? `<span class="row"><button class="btn danger small" data-action="annul-oui" data-id="${r.id}">Annuler la réservation</button><button class="btn ghost small" data-action="annul-non">Garder</button></span>`
+    : `<button class="link" data-action="annul" data-id="${r.id}">Annuler</button>`;
+}
+function prochaine(pid) {
+  const r = aVenir().find(x => x.presentoir === pid);
+  return r ? `<div class="meta num">Prochaine réservation : <b>${esc(courteDate(r.jour))} · ${slotLabel(r.creneau)}</b> · ${esc(r.nom)}</div>` : `<div class="meta">Aucune réservation à venir.</div>`;
 }
 
 function renderCards() {
@@ -306,6 +334,7 @@ function renderCards() {
         <h3>${esc(p.nom)}</h3>
         <span class="pill home">À la maison</span>
         <div class="meta">${last ? `Rentré le ${esc(longDate(last.date))} à ${hm(last.retour)}${last.rendu_par ? ` par ${esc(last.rendu_par)}` : ""}` : "Aucune sortie enregistrée."}</div>
+        ${prochaine(p.id)}
         <button class="btn" data-action="open-sortie" data-pid="${p.id}">Je le prends</button>
       </div>`;
     }
@@ -315,6 +344,7 @@ function renderCards() {
       <span class="pill ${late ? "late" : "out"}">${late ? "Pas encore rentré" : "Sorti"}</span>
       <div class="who">${esc(m.pris_par)}</div>
       <div class="meta num">${esc(GARES[m.gare]?.nom || "")} · ${esc(slotLabel(m.creneau))}<br>Parti le ${esc(longDate(m.date))} à ${hm(m.sortie)}</div>
+      ${prochaine(p.id)}
       <button class="btn" data-action="open-retour" data-pid="${p.id}">Je le rapporte</button>
     </div>`;
   }).join("");
@@ -340,6 +370,7 @@ function renderPanel() {
         ${slots.map(s => `<button type="button" class="chip slot" data-action="pick" data-field="creneau" data-v="${s}" aria-pressed="${P.creneau === s}">${slotLabel(s)}</button>`).join("")}
         <button type="button" class="chip" data-action="pick" data-field="creneau" data-v="${HORS}" aria-pressed="${P.creneau === HORS}">Hors planning</button>
       </div></div>
+      ${(() => { const r = P.creneau !== HORS && resaSur(P.pid, P.date, P.creneau); return r && r.nom !== P.qui ? `<div class="alerte">Ce présentoir est réservé par <b>${esc(r.nom)}</b> sur ce créneau. Vérifie avec cette personne avant de le prendre.</div>` : ""; })()}
       <div class="field"><span class="lab">Pris par</span>${nameChips(P.qui, "qui")}
         <input type="text" id="f-qui" placeholder="Autre nom (prénom nom)" value="${reglages.proclamateurs.includes(P.qui) ? "" : esc(P.qui)}" autocomplete="off"></div>
       <div class="field"><label for="f-note">Remarque (facultatif)</label><textarea id="f-note" placeholder="Ex. : manque des tracts, roue qui grince…">${esc(P.note)}</textarea></div>
@@ -377,10 +408,22 @@ function renderWeek() {
     const dayMoves = mouvements.filter(m => m.date === key && m.gare === g);
     const extra = dayMoves.filter(m => m.creneau === HORS || !slots.includes(m.creneau));
     const rows = slots.map(s => {
-      const ms = dayMoves.filter(m => m.creneau === s);
       const [a, b] = s.split("-");
       const now = isToday && nowMin >= toMin(a) && nowMin < toMin(b);
-      return `<div class="slot-row ${now ? "now" : ""}"><span class="t">${slotLabel(s)}</span><span class="v">${ms.length ? ms.map(m => `<span class="tag">${esc(nomP(m.presentoir))}</span>${esc(m.pris_par)}`).join("<br>") : `<span class="none">—</span>`}</span></div>`;
+      const fini = passe(key, s);
+      const lignes = reglages.presentoirs.map(p => {
+        const tag = `<span class="tag">${esc(nomP(p.id))}</span>`;
+        const mv = dayMoves.find(m => m.creneau === s && m.presentoir === p.id);
+        const r = resaSur(p.id, key, s);
+        const id = `${p.id}|${g}|${key}|${s}`;
+        if (r && r.gare === g) return `<div class="ligne">${tag}<b>${esc(r.nom)}</b>${mv ? " · sorti" : ""} ${fini ? "" : boutonAnnuler(r)}</div>`;
+        if (r) return `<div class="ligne none">${tag}réservé à ${esc(GARES[r.gare].nom)}</div>`;
+        if (mv) return `<div class="ligne">${tag}${esc(mv.pris_par)} · sorti</div>`;
+        if (fini) return `<div class="ligne none">${tag}libre</div>`;
+        if (ui.resa === id) return `<div class="ligne">${tag}<span class="row" style="display:inline-flex"><button class="btn small" data-action="resa-oui" data-id="${id}">Réserver pour ${esc(moi)}</button><button class="btn ghost small" data-action="resa-non">Non</button></span></div>`;
+        return `<div class="ligne">${tag}<button class="btn ghost small libre" data-action="resa" data-id="${id}">Libre · Réserver</button></div>`;
+      }).join("");
+      return `<div class="slot-row ${now ? "now" : ""} ${fini ? "fini" : ""}"><span class="t">${slotLabel(s)}</span><span class="v">${lignes}</span></div>`;
     }).join("") + extra.map(m => `<div class="slot-row"><span class="t">Hors plan.</span><span class="v"><span class="tag">${esc(nomP(m.presentoir))}</span>${esc(m.pris_par)} · ${hm(m.sortie)}</span></div>`).join("");
     return `<div class="quai"><div class="quai-h"><b>${info.nom}</b><span>${info.places} places / créneau</span></div>${rows || `<div class="empty">Pas de créneau ce jour-là.</div>`}</div>`;
   }).join("");
@@ -465,6 +508,10 @@ const MSG = {
   reserve_admin: "Cette action est réservée à Mickaël.",
   mail_invalide: "Cette adresse mail n'est pas valide.",
   pas_soi_meme: "Tu ne peux pas retirer ta propre adresse.",
+  deja_reserve: "Quelqu'un vient de réserver ce présentoir sur ce créneau. Choisis l'autre s'il est libre.",
+  creneau_passe: "Ce créneau est déjà passé.",
+  trop_loin: "On ne peut réserver que 90 jours à l'avance.",
+  creneau_invalide: "Ce créneau n'est pas reconnu.",
   autre: "L'enregistrement n'a pas abouti. Vérifie la connexion et réessaie.",
 };
 async function action(fn, args) {
@@ -477,9 +524,11 @@ document.addEventListener("click", async (ev) => {
   const a = t.dataset.action;
   if (a === "open-sortie") {
     const pid = t.dataset.pid;
-    const lastGare = (mouvements.find(m => m.presentoir === pid) || {}).gare || (pid === "p2" ? "haut" : "bas");
     const today = new Date();
-    ui.panel = { type: "sortie", pid, gare: lastGare, date: ymd(today), creneau: suggestSlot(lastGare, today), qui: moi || "", note: "" };
+    // Une réservation de la personne pour aujourd'hui remplit le formulaire.
+    const mienne = moi && aVenir().find(r => r.presentoir === pid && r.jour === ymd(today) && r.nom === moi);
+    const gare = mienne ? mienne.gare : (mouvements.find(m => m.presentoir === pid) || {}).gare || (pid === "p2" ? "haut" : "bas");
+    ui.panel = { type: "sortie", pid, gare, date: ymd(today), creneau: mienne ? mienne.creneau : suggestSlot(gare, today), qui: moi || "", note: "" };
     renderPanel(); $("panel").scrollIntoView({ behavior: "smooth", block: "start" });
   } else if (a === "open-retour") {
     const m = enCours(t.dataset.pid); if (!m) return;
@@ -496,11 +545,22 @@ document.addEventListener("click", async (ev) => {
     else if (f === "rendu") { P.rendu = v; const i = $("f-rendu"); if (i) i.value = ""; }
     renderPanel();
   } else if (a === "moi-changer") { ui.choixMoi = true; renderMoi(); }
-  else if (a === "moi-choisir") { moi = t.dataset.v; lsSet(MOI_KEY, moi); ui.choixMoi = false; renderMoi(); }
+  else if (a === "moi-choisir") { moi = t.dataset.v; lsSet(MOI_KEY, moi); ui.choixMoi = false; banner(""); renderAll(); }
   else if (a === "moi-autre") {
     const n = $("moi-autre").value.trim(); if (!n) return;
-    moi = n.slice(0, 80); lsSet(MOI_KEY, moi); ui.choixMoi = false; renderMoi();
+    moi = n.slice(0, 80); lsSet(MOI_KEY, moi); ui.choixMoi = false; banner(""); renderAll();
   }
+  else if (a === "resa") {
+    if (!moi) { ui.choixMoi = true; renderMoi(); banner("Dis d'abord qui tu es (en haut de la page), puis touche à nouveau « Réserver »."); $("moi").scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+    ui.resa = t.dataset.id; renderWeek();
+  } else if (a === "resa-non") { ui.resa = null; renderWeek(); }
+  else if (a === "resa-oui") {
+    const [pid, gare, jour, creneau] = t.dataset.id.split("|"); ui.resa = null;
+    t.disabled = true;
+    await action("pres_reserver", { p_presentoir: pid, p_gare: gare, p_jour: jour, p_creneau: creneau, p_nom: moi });
+  } else if (a === "annul") { ui.annul = t.dataset.id; renderMoi(); renderWeek(); }
+  else if (a === "annul-non") { ui.annul = null; renderMoi(); renderWeek(); }
+  else if (a === "annul-oui") { const id = t.dataset.id; ui.annul = null; await action("pres_annuler", { p_id: id }); }
   else if (a === "week") { ui.weekOffset += Number(t.dataset.d); renderWeek(); }
   else if (a === "day") { ui.day = Number(t.dataset.d); renderWeek(); }
   else if (a === "del") { ui.confirmDel = t.dataset.mid; renderLog(); }
