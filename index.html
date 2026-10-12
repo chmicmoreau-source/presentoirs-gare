@@ -105,7 +105,18 @@ textarea { min-height: 60px; resize: vertical; }
 .slot-row.fini .t { color: var(--muted); }
 .ligne { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding-block: 3px; }
 .ligne.none { color: var(--muted); }
-.btn.libre { border-color: var(--ok); color: var(--ok); background: var(--ok-bg); }
+.libre-txt { color: var(--ok); font-weight: 600; }
+.slot-row.clic { cursor: pointer; }
+.slot-row.clic:hover { background: var(--ok-bg); }
+.slot-row .go { grid-column: 2; justify-self: start; font-size: 13px; font-weight: 700; color: var(--ok); text-transform: uppercase; letter-spacing: .06em; }
+.qrs { display: flex; flex-wrap: wrap; gap: 16px; }
+.qrs figure { margin: 0; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.qrs figcaption { font-family: var(--font-display); font-weight: 700; font-size: 16px; text-transform: uppercase; letter-spacing: .06em; }
+.affiche .duo { display: flex; flex-wrap: wrap; gap: 6vmin; justify-content: center; }
+.affiche figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.affiche figcaption { font-family: var(--font-display); font-weight: 700; font-size: clamp(24px, 5vmin, 44px); text-transform: uppercase; }
+.affiche { overflow: auto; }
+.affiche .qrbig img, .affiche .qrbig canvas { width: min(28vmin, 340px); height: auto; }
 .alerte { color: var(--warn); background: var(--warn-bg); border-radius: 8px; padding: 6px 10px; font-size: 14px; }
 .empty { color: var(--muted); padding: 12px; font-size: 15px; }
 
@@ -194,13 +205,13 @@ details.settings[open] summary { margin-bottom: 12px; }
 <div id="affiche" class="affiche" hidden>
   <button class="btn fermer" data-action="affiche-fermer">Fermer</button>
   <h2>Présentoirs de la gare</h2>
-  <div class="qrbig" id="qrbig"></div>
-  <p>Scanne ce code avec ton téléphone pour noter quand tu prends ou rapportes un présentoir.</p>
+  <div class="duo" id="qrbig"></div>
+  <p>Scanne le bon code avec l'appareil photo de ton téléphone : quand tu prends un présentoir, puis quand tu le rapportes.</p>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="config.js?v=202610122305"></script>
+<script src="config.js?v=202610122312"></script>
 <script>
 // Planning relevé dans JW Scheduler (semaine du 12 octobre 2026). Clé = jour JS (0 = dimanche).
 const PLANNING = {
@@ -235,7 +246,9 @@ const longDate = (s) => dateFromYmd(s).toLocaleDateString("fr-FR", { weekday: "l
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} };
 const isAdmin = () => role === "admin";
-const lienQr = (k) => location.origin + location.pathname + "#cle=" + k;
+const lienQr = (k, act) => location.origin + location.pathname + "#cle=" + k + (act ? "&act=" + act : "");
+const noms = (r) => String(r.nom || "").split(", ");
+const estDe = (r, n) => !!n && noms(r).includes(n);
 
 function mondayOf(offset) {
   const d = new Date(); d.setHours(0, 0, 0, 0);
@@ -270,7 +283,7 @@ function banner(msg) { const b = $("banner"); b.textContent = msg || ""; b.hidde
 // ------------------------------------------------------------ accès aux données
 function codeErreur(error) {
   const m = (error && (error.message || "")) + "";
-  for (const c of ["acces_refuse", "reserve_admin", "deja_sorti", "deja_rentre", "nom_invalide", "mail_invalide", "pas_soi_meme"]) if (m.includes(c)) return c;
+  for (const c of ["acces_refuse", "reserve_admin", "deja_sorti", "deja_rentre", "nom_invalide", "mail_invalide", "pas_soi_meme", "deja_reserve", "creneau_passe", "trop_loin", "creneau_invalide"]) if (m.includes(c)) return c;
   return "autre";
 }
 async function appel(fn, args) {
@@ -301,7 +314,7 @@ function renderClock() {
 function renderMoi() {
   const names = [...reglages.proclamateurs].sort((a, b) => a.localeCompare(b, "fr"));
   if (moi && !ui.choixMoi) {
-    const miennes = aVenir().filter(r => r.nom === moi);
+    const miennes = aVenir().filter(r => estDe(r, moi));
     $("moi").innerHTML = `<span>Tu es <b>${esc(moi)}</b></span><button class="link" data-action="moi-changer">Ce n'est pas moi</button>
       <div class="field" style="width:100%"><span class="lab">Mes réservations</span>
       ${miennes.length ? miennes.map(r => `<div class="row" style="justify-content:space-between"><span class="num"><span class="tag">${esc(nomP(r.presentoir))}</span>${esc(courteDate(r.jour))} · ${slotLabel(r.creneau)} · ${esc(GARES[r.gare]?.nom || "")}</span>${boutonAnnuler(r)}</div>`).join("")
@@ -315,7 +328,7 @@ function renderMoi() {
 }
 
 function boutonAnnuler(r) {
-  if (!(r.nom === moi || isAdmin())) return "";
+  if (!(estDe(r, moi) || isAdmin())) return "";
   return ui.annul === r.id
     ? `<span class="row"><button class="btn danger small" data-action="annul-oui" data-id="${r.id}">Annuler la réservation</button><button class="btn ghost small" data-action="annul-non">Garder</button></span>`
     : `<button class="link" data-action="annul" data-id="${r.id}">Annuler</button>`;
@@ -358,10 +371,32 @@ function nameChips(selected, field) {
 function renderPanel() {
   const P = ui.panel;
   if (!P) { $("panel").innerHTML = ""; return; }
+  if (P.type === "resa") {
+    $("panel").innerHTML = `<form class="panel" id="f-resa">
+      <h3>Réserver · ${esc(courteDate(P.jour))} · ${slotLabel(P.creneau)}</h3>
+      <div class="meta">${esc(GARES[P.gare].nom)}</div>
+      <div class="field"><span class="lab">Présentoir</span><div class="chips">
+        ${reglages.presentoirs.map(p => { const r = resaSur(p.id, P.jour, P.creneau);
+          return r ? `<button type="button" class="chip" disabled>${esc(p.nom)} · pris (${esc(r.nom)})</button>`
+                   : `<button type="button" class="chip" data-action="pick" data-field="rpid" data-v="${p.id}" aria-pressed="${P.pid === p.id}">${esc(p.nom)}</button>`; }).join("")}
+      </div></div>
+      <div class="field"><span class="lab">Noms (touche chaque personne du créneau)</span>
+        <div class="chips">${[...reglages.proclamateurs].sort((a, b) => a.localeCompare(b, "fr")).map(n => `<button type="button" class="chip" data-action="pick" data-field="noms" data-v="${esc(n)}" aria-pressed="${P.noms.includes(n)}">${esc(n)}</button>`).join("")}
+          ${P.noms.filter(n => !reglages.proclamateurs.includes(n)).map(n => `<button type="button" class="chip" data-action="pick" data-field="noms" data-v="${esc(n)}" aria-pressed="true">${esc(n)}</button>`).join("")}</div>
+        <div class="row"><input type="text" id="f-autre" placeholder="Autre nom (prénom nom)" autocomplete="off" style="flex:1;min-width:0"><button type="button" class="btn ghost small" data-action="ajout-nom">Ajouter</button></div></div>
+      <div class="row"><button class="btn" type="submit" ${ui.busy ? "disabled" : ""}>Réserver</button><button class="btn ghost" type="button" data-action="close">Annuler</button></div>
+      <div class="meta" id="f-err" role="alert"></div>
+    </form>`;
+    return;
+  }
   if (P.type === "sortie") {
     const slots = (PLANNING[dateFromYmd(P.date).getDay()] || {})[P.gare] || [];
+    const dispo = reglages.presentoirs.filter(p => !enCours(p.id));
     $("panel").innerHTML = `<form class="panel" id="f-sortie">
-      <h3>Je prends · ${esc(nomP(P.pid))}</h3>
+      <h3>Je prends un présentoir</h3>
+      <div class="field"><span class="lab">Présentoir</span><div class="chips">
+        ${dispo.map(p => `<button type="button" class="chip" data-action="pick" data-field="pid" data-v="${p.id}" aria-pressed="${P.pid === p.id}">${esc(p.nom)}</button>`).join("") || `<span class="meta">Les deux présentoirs sont déjà sortis.</span>`}
+      </div></div>
       <div class="field"><span class="lab">Gare</span><div class="chips">
         ${Object.entries(GARES).map(([k, g]) => `<button type="button" class="chip" data-action="pick" data-field="gare" data-v="${k}" aria-pressed="${P.gare === k}">${g.nom}</button>`).join("")}
       </div></div>
@@ -370,7 +405,7 @@ function renderPanel() {
         ${slots.map(s => `<button type="button" class="chip slot" data-action="pick" data-field="creneau" data-v="${s}" aria-pressed="${P.creneau === s}">${slotLabel(s)}</button>`).join("")}
         <button type="button" class="chip" data-action="pick" data-field="creneau" data-v="${HORS}" aria-pressed="${P.creneau === HORS}">Hors planning</button>
       </div></div>
-      ${(() => { const r = P.creneau !== HORS && resaSur(P.pid, P.date, P.creneau); return r && r.nom !== P.qui ? `<div class="alerte">Ce présentoir est réservé par <b>${esc(r.nom)}</b> sur ce créneau. Vérifie avec cette personne avant de le prendre.</div>` : ""; })()}
+      ${(() => { const r = P.pid && P.creneau !== HORS && resaSur(P.pid, P.date, P.creneau); return r && !estDe(r, P.qui) ? `<div class="alerte">Ce présentoir est réservé par <b>${esc(r.nom)}</b> sur ce créneau. Vérifie avec cette personne avant de le prendre.</div>` : ""; })()}
       <div class="field"><span class="lab">Pris par</span>${nameChips(P.qui, "qui")}
         <input type="text" id="f-qui" placeholder="Autre nom (prénom nom)" value="${reglages.proclamateurs.includes(P.qui) ? "" : esc(P.qui)}" autocomplete="off"></div>
       <div class="field"><label for="f-note">Remarque (facultatif)</label><textarea id="f-note" placeholder="Ex. : manque des tracts, roue qui grince…">${esc(P.note)}</textarea></div>
@@ -378,11 +413,15 @@ function renderPanel() {
       <div class="meta" id="f-err" role="alert"></div>
     </form>`;
   } else {
-    const m = mouvements.find(x => x.id === P.mid);
-    if (!m) { ui.panel = null; $("panel").innerHTML = ""; return; }
+    const dehors = mouvements.filter(x => !x.retour);
+    const m = dehors.find(x => x.id === P.mid);
+    if (!dehors.length) { ui.panel = null; $("panel").innerHTML = ""; banner("Aucun présentoir n'est noté comme sorti : rien à rapporter."); return; }
     $("panel").innerHTML = `<form class="panel" id="f-retour">
-      <h3>Je rapporte · ${esc(nomP(m.presentoir))}</h3>
-      <div class="meta num">Pris par <b>${esc(m.pris_par)}</b> · ${esc(GARES[m.gare]?.nom || "")} · ${esc(slotLabel(m.creneau))} · parti à ${hm(m.sortie)}</div>
+      <h3>Je rapporte un présentoir</h3>
+      <div class="field"><span class="lab">Présentoir</span><div class="chips">
+        ${dehors.map(x => `<button type="button" class="chip" data-action="pick" data-field="mid" data-v="${x.id}" aria-pressed="${P.mid === x.id}">${esc(nomP(x.presentoir))} · ${esc(x.pris_par)}</button>`).join("")}
+      </div></div>
+      ${m ? `<div class="meta num">Pris par <b>${esc(m.pris_par)}</b> · ${esc(GARES[m.gare]?.nom || "")} · ${esc(slotLabel(m.creneau))} · parti à ${hm(m.sortie)}</div>` : ""}
       <div class="field"><span class="lab">Rapporté par</span>${nameChips(P.rendu, "rendu")}
         <input type="text" id="f-rendu" placeholder="Autre nom" value="${reglages.proclamateurs.includes(P.rendu) ? "" : esc(P.rendu)}" autocomplete="off"></div>
       <div class="field"><label for="f-noteR">État au retour (facultatif)</label><textarea id="f-noteR" placeholder="Ex. : publications à recompléter">${esc(P.note)}</textarea></div>
@@ -411,19 +450,20 @@ function renderWeek() {
       const [a, b] = s.split("-");
       const now = isToday && nowMin >= toMin(a) && nowMin < toMin(b);
       const fini = passe(key, s);
+      let libres = 0;
       const lignes = reglages.presentoirs.map(p => {
         const tag = `<span class="tag">${esc(nomP(p.id))}</span>`;
         const mv = dayMoves.find(m => m.creneau === s && m.presentoir === p.id);
         const r = resaSur(p.id, key, s);
-        const id = `${p.id}|${g}|${key}|${s}`;
         if (r && r.gare === g) return `<div class="ligne">${tag}<b>${esc(r.nom)}</b>${mv ? " · sorti" : ""} ${fini ? "" : boutonAnnuler(r)}</div>`;
         if (r) return `<div class="ligne none">${tag}réservé à ${esc(GARES[r.gare].nom)}</div>`;
         if (mv) return `<div class="ligne">${tag}${esc(mv.pris_par)} · sorti</div>`;
         if (fini) return `<div class="ligne none">${tag}libre</div>`;
-        if (ui.resa === id) return `<div class="ligne">${tag}<span class="row" style="display:inline-flex"><button class="btn small" data-action="resa-oui" data-id="${id}">Réserver pour ${esc(moi)}</button><button class="btn ghost small" data-action="resa-non">Non</button></span></div>`;
-        return `<div class="ligne">${tag}<button class="btn ghost small libre" data-action="resa" data-id="${id}">Libre · Réserver</button></div>`;
+        libres++;
+        return `<div class="ligne">${tag}<span class="libre-txt">libre</span></div>`;
       }).join("");
-      return `<div class="slot-row ${now ? "now" : ""} ${fini ? "fini" : ""}"><span class="t">${slotLabel(s)}</span><span class="v">${lignes}</span></div>`;
+      const clic = !fini && libres > 0;
+      return `<div class="slot-row ${now ? "now" : ""} ${fini ? "fini" : ""} ${clic ? "clic" : ""}" ${clic ? `data-action="slot" data-g="${g}" data-d="${key}" data-s="${s}" role="button" tabindex="0" aria-label="Réserver ${slotLabel(s)} à ${info.nom}"` : ""}><span class="t">${slotLabel(s)}</span><span class="v">${lignes}</span>${clic ? `<span class="go" aria-hidden="true">Réserver ›</span>` : ""}</div>`;
     }).join("") + extra.map(m => `<div class="slot-row"><span class="t">Hors plan.</span><span class="v"><span class="tag">${esc(nomP(m.presentoir))}</span>${esc(m.pris_par)} · ${hm(m.sortie)}</span></div>`).join("");
     return `<div class="quai"><div class="quai-h"><b>${info.nom}</b><span>${info.places} places / créneau</span></div>${rows || `<div class="empty">Pas de créneau ce jour-là.</div>`}</div>`;
   }).join("");
@@ -449,16 +489,30 @@ function renderLog() {
   }).join("")}</div></div>`).join("");
 }
 
+// Une sortie et un retour par présentoir, puis l'accès simple (réserver).
+function QRS() {
+  const k = ui.cleAdmin;
+  return [
+    ...reglages.presentoirs.flatMap(p => [
+      { titre: `${p.nom} · Je le prends`, lien: lienQr(k, "sortie-" + p.id), pid: p.id },
+      { titre: `${p.nom} · Je le rapporte`, lien: lienQr(k, "retour-" + p.id), pid: p.id },
+    ]),
+    { titre: "Réserver un créneau", lien: lienQr(k) },
+  ];
+}
+
 function renderSettings() {
   $("settings").hidden = !isAdmin();
   if (!isAdmin()) return;
   const lien = ui.cleAdmin ? lienQr(ui.cleAdmin) : "";
   $("settings-body").innerHTML = `
-    <div class="field"><span class="lab">QR code à afficher chez toi</span>
-      ${ui.cleAdmin ? `<div class="qrbox" id="qr"></div>
-        <div class="row"><button class="btn small" data-action="affiche">Afficher en grand</button><button class="btn ghost small" data-action="copier">Copier le lien</button></div>
+    <div class="field"><span class="lab">QR codes à afficher chez toi</span>
+      ${ui.cleAdmin ? `<div class="qrs">${QRS().map((q, i) => `<figure><div class="qrbox" id="qr${i}"></div><figcaption>${esc(q.titre)}</figcaption></figure>`).join("")}</div>
+        <div class="row"><button class="btn small" data-action="affiche">Afficher l'affiche en grand</button></div>
+        <span class="meta">Chaque QR code ouvre directement la bonne action pour le bon présentoir. Le dernier sert seulement à réserver.</span>
+        <div class="row"><button class="btn ghost small" data-action="copier">Copier le lien d'accès</button></div>
         <span class="copy" id="lien">${esc(lien)}</span>
-        <span class="meta">Ce lien ouvre l'accès comme le QR code : ne l'envoie qu'aux proclamateurs.</span>
+        <span class="meta">Ce lien ouvre l'accès comme les QR codes : ne l'envoie qu'aux proclamateurs.</span>
         ${ui.confirmCle
           ? `<div class="row"><span class="meta">L'ancien QR code ne marchera plus, ni sur les téléphones qui l'ont déjà scanné.</span><button class="btn danger small" data-action="cle-oui">Changer le code</button><button class="btn ghost small" data-action="cle-non">Garder</button></div>`
           : `<div class="row"><button class="link" data-action="cle-changer">Changer le QR code…</button></div>`}`
@@ -477,7 +531,7 @@ function renderSettings() {
       <div class="row"><input type="email" id="new-mail" placeholder="adresse@exemple.fr" style="flex:1;min-width:0"><button class="btn small" data-action="add-mail">Autoriser</button></div>
       <span class="meta">Ces personnes peuvent se connecter par un lien reçu par mail, sans le QR code.</span>
     </div>`;
-  if (ui.cleAdmin && window.QRCode) new QRCode($("qr"), { text: lien, width: 220, height: 220, colorDark: "#000000", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
+  if (ui.cleAdmin && window.QRCode) QRS().forEach((q, i) => new QRCode($("qr" + i), { text: q.lien, width: 160, height: 160, colorDark: "#000000", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M }));
   else if (!ui.cleAdmin) appel("pres_voir_cle").then(k => { ui.cleAdmin = k; renderSettings(); }).catch(() => {});
 }
 
@@ -494,7 +548,7 @@ function syncPanelInputs() {
     const d = $("f-date")?.value; if (d && d !== P.date) { P.date = d; P.creneau = suggestSlot(P.gare, dateFromYmd(d)); }
     const typed = $("f-qui")?.value.trim(); if (typed) P.qui = typed;
     P.note = $("f-note")?.value ?? P.note;
-  } else {
+  } else if (P.type === "retour") {
     const typed = $("f-rendu")?.value.trim(); if (typed) P.rendu = typed;
     P.note = $("f-noteR")?.value ?? P.note;
   }
@@ -522,43 +576,38 @@ async function action(fn, args) {
 document.addEventListener("click", async (ev) => {
   const t = ev.target.closest("[data-action]"); if (!t) return;
   const a = t.dataset.action;
-  if (a === "open-sortie") {
-    const pid = t.dataset.pid;
-    const today = new Date();
-    // Une réservation de la personne pour aujourd'hui remplit le formulaire.
-    const mienne = moi && aVenir().find(r => r.presentoir === pid && r.jour === ymd(today) && r.nom === moi);
-    const gare = mienne ? mienne.gare : (mouvements.find(m => m.presentoir === pid) || {}).gare || (pid === "p2" ? "haut" : "bas");
-    ui.panel = { type: "sortie", pid, gare, date: ymd(today), creneau: mienne ? mienne.creneau : suggestSlot(gare, today), qui: moi || "", note: "" };
-    renderPanel(); $("panel").scrollIntoView({ behavior: "smooth", block: "start" });
-  } else if (a === "open-retour") {
-    const m = enCours(t.dataset.pid); if (!m) return;
-    ui.panel = { type: "retour", mid: m.id, rendu: moi || m.pris_par, note: "" };
-    renderPanel(); $("panel").scrollIntoView({ behavior: "smooth", block: "start" });
-  } else if (a === "close") { ui.panel = null; renderPanel(); }
+  if (a === "open-sortie") ouvrirSortie(t.dataset.pid);
+  else if (a === "open-retour") ouvrirRetour(t.dataset.pid);
+  else if (a === "close") { ui.panel = null; renderPanel(); }
+  else if (a === "slot") {
+    const libre = reglages.presentoirs.find(p => !resaSur(p.id, t.dataset.d, t.dataset.s));
+    ui.panel = { type: "resa", gare: t.dataset.g, jour: t.dataset.d, creneau: t.dataset.s, pid: libre ? libre.id : null, noms: moi ? [moi] : [] };
+    montrerPanel();
+  } else if (a === "ajout-nom") {
+    const i = $("f-autre"), n = (i?.value || "").trim().slice(0, 80);
+    if (n && ui.panel && !ui.panel.noms.includes(n)) ui.panel.noms.push(n);
+    renderPanel();
+  }
   else if (a === "pick") {
     const P = ui.panel; if (!P) return;
     syncPanelInputs();
     const f = t.dataset.field, v = t.dataset.v;
-    if (f === "gare") { P.gare = v; P.creneau = suggestSlot(v, dateFromYmd(P.date)); }
+    if (f === "pid") { const q = { ...P }; ouvrirSortie(v, q.qui); return; }
+    else if (f === "mid") { P.mid = v; }
+    else if (f === "rpid") P.pid = v;
+    else if (f === "noms") P.noms = P.noms.includes(v) ? P.noms.filter(n => n !== v) : [...P.noms, v];
+    else if (f === "gare") { P.gare = v; P.creneau = suggestSlot(v, dateFromYmd(P.date)); }
     else if (f === "creneau") P.creneau = v;
     else if (f === "qui") { P.qui = v; const i = $("f-qui"); if (i) i.value = ""; }
     else if (f === "rendu") { P.rendu = v; const i = $("f-rendu"); if (i) i.value = ""; }
     renderPanel();
   } else if (a === "moi-changer") { ui.choixMoi = true; renderMoi(); }
-  else if (a === "moi-choisir") { moi = t.dataset.v; lsSet(MOI_KEY, moi); ui.choixMoi = false; banner(""); renderAll(); }
+  else if (a === "moi-choisir") { moi = t.dataset.v; lsSet(MOI_KEY, moi); ui.choixMoi = false; banner(""); renderAll(); lancerAFaire(); }
   else if (a === "moi-autre") {
     const n = $("moi-autre").value.trim(); if (!n) return;
-    moi = n.slice(0, 80); lsSet(MOI_KEY, moi); ui.choixMoi = false; banner(""); renderAll();
+    moi = n.slice(0, 80); lsSet(MOI_KEY, moi); ui.choixMoi = false; banner(""); renderAll(); lancerAFaire();
   }
-  else if (a === "resa") {
-    if (!moi) { ui.choixMoi = true; renderMoi(); banner("Dis d'abord qui tu es (en haut de la page), puis touche à nouveau « Réserver »."); $("moi").scrollIntoView({ behavior: "smooth", block: "start" }); return; }
-    ui.resa = t.dataset.id; renderWeek();
-  } else if (a === "resa-non") { ui.resa = null; renderWeek(); }
-  else if (a === "resa-oui") {
-    const [pid, gare, jour, creneau] = t.dataset.id.split("|"); ui.resa = null;
-    t.disabled = true;
-    await action("pres_reserver", { p_presentoir: pid, p_gare: gare, p_jour: jour, p_creneau: creneau, p_nom: moi });
-  } else if (a === "annul") { ui.annul = t.dataset.id; renderMoi(); renderWeek(); }
+  else if (a === "annul") { ui.annul = t.dataset.id; renderMoi(); renderWeek(); }
   else if (a === "annul-non") { ui.annul = null; renderMoi(); renderWeek(); }
   else if (a === "annul-oui") { const id = t.dataset.id; ui.annul = null; await action("pres_annuler", { p_id: id }); }
   else if (a === "week") { ui.weekOffset += Number(t.dataset.d); renderWeek(); }
@@ -589,8 +638,9 @@ document.addEventListener("click", async (ev) => {
     try { await navigator.clipboard.writeText(lien); t.textContent = "Lien copié"; }
     catch (e) { const r = document.createRange(); r.selectNodeContents($("lien")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
   } else if (a === "affiche") {
-    $("qrbig").innerHTML = "";
-    new QRCode($("qrbig"), { text: lienQr(ui.cleAdmin), width: 520, height: 520, colorDark: "#000000", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
+    const qs = QRS().filter(q => q.pid);
+    $("qrbig").innerHTML = reglages.presentoirs.map(p => `<div style="display:flex;flex-direction:column;gap:3vmin;align-items:center"><figcaption>${esc(p.nom)}</figcaption><div class="duo">${qs.map((q, i) => q.pid === p.id ? `<figure><div class="qrbig" id="big${i}"></div><figcaption style="font-size:clamp(16px,3vmin,26px)">${q.titre.includes("prends") ? "Je le prends" : "Je le rapporte"}</figcaption></figure>` : "").join("")}</div></div>`).join("");
+    qs.forEach((q, i) => new QRCode($("big" + i), { text: q.lien, width: 420, height: 420, colorDark: "#000000", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M }));
     $("affiche").hidden = false;
   } else if (a === "affiche-fermer") { $("affiche").hidden = true; }
   else if (a === "sortir") {
@@ -599,6 +649,39 @@ document.addEventListener("click", async (ev) => {
     location.reload();
   }
 });
+// Action portée par un QR code (« Présentoir 1 · Je le prends »…) : on demande
+// d'abord le nom si le téléphone ne le connaît pas, puis on ouvre le formulaire.
+function lancerAFaire() {
+  const f = ui.aFaire; if (!f) return;
+  if (!moi) { ui.choixMoi = true; renderMoi(); banner(`Touche ton nom ci-dessous pour continuer (${f.type === "sortie" ? "je prends" : "je rapporte"} ${nomP(f.pid)}).`); return; }
+  ui.aFaire = null;
+  if (f.type === "sortie") {
+    if (enCours(f.pid)) { banner(`${nomP(f.pid)} est déjà noté comme sorti (${enCours(f.pid).pris_par}). S'il est revenu, scanne d'abord « Je le rapporte ».`); return; }
+    ouvrirSortie(f.pid);
+  } else {
+    if (!enCours(f.pid)) { banner(`${nomP(f.pid)} est déjà noté comme rentré.`); return; }
+    ouvrirRetour(f.pid);
+  }
+}
+function montrerPanel() { renderPanel(); $("panel").scrollIntoView({ behavior: "smooth", block: "start" }); }
+function ouvrirSortie(pid, qui) {
+  const today = new Date();
+  if (!pid || enCours(pid)) pid = (reglages.presentoirs.find(p => !enCours(p.id)) || {}).id || null;
+  // Une réservation de la personne pour aujourd'hui remplit le formulaire.
+  const mienne = pid && moi && aVenir().find(r => r.presentoir === pid && r.jour === ymd(today) && estDe(r, moi));
+  const gare = mienne ? mienne.gare : (mouvements.find(m => m.presentoir === pid) || {}).gare || (pid === "p2" ? "haut" : "bas");
+  ui.panel = { type: "sortie", pid, gare, date: ymd(today), creneau: mienne ? mienne.creneau : suggestSlot(gare, today), qui: qui || moi || "", note: "" };
+  montrerPanel();
+}
+function ouvrirRetour(pid) {
+  const m = (pid && enCours(pid)) || mouvements.find(x => !x.retour && estDe({ nom: x.pris_par }, moi)) || mouvements.find(x => !x.retour);
+  ui.panel = { type: "retour", mid: m ? m.id : null, rendu: moi || (m && m.pris_par) || "", note: "" };
+  montrerPanel();
+}
+document.addEventListener("keydown", (ev) => {
+  const t = ev.target.closest && ev.target.closest('[data-action="slot"]');
+  if (t && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); t.click(); }
+});
 document.addEventListener("change", (ev) => { if (ev.target.id === "f-date") { syncPanelInputs(); renderPanel(); } });
 
 document.addEventListener("submit", async (ev) => {
@@ -606,17 +689,26 @@ document.addEventListener("submit", async (ev) => {
   if (ev.target.id === "porte-forme") return envoyerLien();
   const P = ui.panel; if (!P) return;
   syncPanelInputs();
+  if (P.type === "resa") {
+    const autre = ($("f-autre")?.value || "").trim().slice(0, 80);
+    if (autre && !P.noms.includes(autre)) P.noms.push(autre);
+    if (!P.pid) { showErr("Choisis un présentoir libre."); return; }
+    if (!P.noms.length) { showErr("Touche au moins un nom."); return; }
+  }
+  if (P.type === "sortie" && !P.pid) { showErr("Choisis le présentoir que tu prends."); return; }
   if (P.type === "sortie" && !P.qui) { showErr("Indique qui prend le présentoir."); return; }
+  if (P.type === "retour" && !P.mid) { showErr("Choisis le présentoir que tu rapportes."); return; }
   if (P.type === "retour" && !P.rendu) { showErr("Indique qui rapporte le présentoir."); return; }
   ui.busy = true; renderPanel();
   try {
-    if (P.type === "sortie") await appel("pres_sortie", { p_presentoir: P.pid, p_gare: P.gare, p_jour: P.date, p_creneau: P.creneau, p_pris_par: P.qui, p_note: P.note.trim() });
+    if (P.type === "resa") await appel("pres_reserver", { p_presentoir: P.pid, p_gare: P.gare, p_jour: P.jour, p_creneau: P.creneau, p_nom: P.noms.join(", ") });
+    else if (P.type === "sortie") await appel("pres_sortie", { p_presentoir: P.pid, p_gare: P.gare, p_jour: P.date, p_creneau: P.creneau, p_pris_par: P.qui, p_note: P.note.trim() });
     else await appel("pres_retour", { p_id: P.mid, p_rendu_par: P.rendu, p_note: P.note.trim() });
     ui.panel = null; ui.busy = false;
     await charger();
   } catch (e) {
     ui.busy = false; renderPanel(); showErr(MSG[e.code] || MSG.autre);
-    if (e.code === "deja_sorti" || e.code === "deja_rentre") charger().catch(() => {});
+    if (["deja_sorti", "deja_rentre", "deja_reserve"].includes(e.code)) charger().catch(() => {});
   }
 });
 
@@ -652,6 +744,8 @@ async function entrer() {
 async function demarrer() {
   renderClock();
   const m = location.hash.match(/cle=([0-9a-f]{24,})/i);
+  const act = location.hash.match(/act=(sortie|retour)-(p\d)/);
+  if (act) ui.aFaire = { type: act[1], pid: act[2] };
   if (m) { cle = m[1]; lsSet(CLE_KEY, cle); history.replaceState(null, "", location.pathname + location.search); }
   else cle = lsGet(CLE_KEY);
   moi = lsGet(MOI_KEY);
@@ -659,6 +753,13 @@ async function demarrer() {
   sb = window.supabase.createClient(window.CONFIG.url, window.CONFIG.cle, { auth: { detectSessionInUrl: true, persistSession: true, autoRefreshToken: true } });
   const r = await sb.auth.getSession(); session = r.data?.session || null;
   let dedans = await entrer();
+  if (dedans) lancerAFaire();
+  // Un autre QR code scanné alors que la page est déjà ouverte.
+  window.addEventListener("hashchange", () => {
+    const a2 = location.hash.match(/act=(sortie|retour)-(p\d)/);
+    history.replaceState(null, "", location.pathname + location.search);
+    if (a2 && dedans) { ui.aFaire = { type: a2[1], pid: a2[2] }; lancerAFaire(); }
+  });
   sb.auth.onAuthStateChange((evt, s) => {
     session = s || null;
     if (evt === "SIGNED_IN" && !dedans) entrer().then(ok => { dedans = ok; });
