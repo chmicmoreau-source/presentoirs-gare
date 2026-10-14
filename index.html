@@ -215,7 +215,7 @@ details.settings[open] summary { margin-bottom: 12px; }
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="config.js?v=202610122322"></script>
+<script src="config.js?v=202610141333"></script>
 <script>
 // Planning relevé dans JW Scheduler (semaine du 12 octobre 2026). Clé = jour JS (0 = dimanche).
 const PLANNING = {
@@ -232,7 +232,7 @@ const HORS = "hors-planning";
 const JOURS = ["dim.","lun.","mar.","mer.","jeu.","ven.","sam."];
 const CLE_KEY = "pres_cle", MOI_KEY = "pres_moi";
 
-let reglages = { presentoirs: [{ id: "p1", nom: "Présentoir 1" }, { id: "p2", nom: "Présentoir 2" }], proclamateurs: [], lieux: [] };
+let reglages = { presentoirs: [{ id: "p1", nom: "Présentoir 1" }, { id: "p2", nom: "Présentoir 2" }], proclamateurs: [], lieux: [], indispos: [] };
 const AUTRE = "autre";
 // Le champ « gare » garde bas/haut pour la gare, et le nom du lieu sinon.
 const nomLieu = (v) => (GARES[v] && GARES[v].nom) || v || "";
@@ -282,6 +282,22 @@ const chevauche = (a, b) => toMin(a.split("-")[0]) < toMin(b.split("-")[1]) && t
 const resaSur = (pid, jour, s) => reservations.find(r => r.presentoir === pid && r.jour === jour && chevauche(r.creneau, s));
 const courteDate = (s) => dateFromYmd(s).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" });
 const aVenir = () => reservations.filter(r => !passe(r.jour, r.creneau));
+// Indisponibilités habituelles, chaque semaine (jour JS : 0 = dimanche).
+const INDISPOS_DEFAUT = [{ presentoir: "p2", deJour: 1, deH: "18:00", aJour: 3, aH: "09:00" }];
+const minSemaine = (jourJs, h) => ((jourJs + 6) % 7) * 1440 + toMin(h);
+// La règle qui rend ce présentoir indisponible sur ce créneau, s'il y en a une.
+function indispoSur(pid, jour, s) {
+  if (!creneauOk(s)) return null;
+  const j = dateFromYmd(jour).getDay();
+  const a = minSemaine(j, s.split("-")[0]), b = minSemaine(j, s.split("-")[1]);
+  return (reglages.indispos || []).find(x => {
+    if (x.presentoir !== pid) return false;
+    const d = minSemaine(x.deJour, x.deH), f = minSemaine(x.aJour, x.aH);
+    return d < f ? (a < f && d < b) : (a < f || d < b); // la plage peut passer par le dimanche soir
+  }) || null;
+}
+const reservable = (pid, jour, s) => !resaSur(pid, jour, s) && (isAdmin() || !indispoSur(pid, jour, s));
+const libelleIndispo = (x) => `${JOURS[x.deJour]} ${x.deH.replace(":00", " h").replace(":", " h ")} → ${JOURS[x.aJour]} ${x.aH.replace(":00", " h").replace(":", " h ")}`;
 function enRetard(m) {
   if (!m || !creneauOk(m.creneau)) return false;
   const end = dateFromYmd(m.date); end.setMinutes(toMin(m.creneau.split("-")[1]) + 45);
@@ -304,7 +320,7 @@ async function charger() {
   const d = await appel("pres_lire");
   role = d.role;
   const r = d.reglages || {};
-  reglages = { presentoirs: r.presentoirs?.length ? r.presentoirs : reglages.presentoirs, proclamateurs: r.proclamateurs || [], lieux: r.lieux || [] };
+  reglages = { presentoirs: r.presentoirs?.length ? r.presentoirs : reglages.presentoirs, proclamateurs: r.proclamateurs || [], lieux: r.lieux || [], indispos: r.indispos || INDISPOS_DEFAUT };
   mouvements = (d.mouvements || []).map(m => ({ ...m, date: m.jour }));
   reservations = d.reservations || [];
   membres = d.membres;
@@ -413,9 +429,10 @@ function renderPanel() {
         : `<h3>Réserver · ${esc(courteDate(P.jour))} · ${slotLabel(P.creneau)}</h3>
            <div class="meta">${esc(nomLieu(P.gare))}</div>`}
       <div class="field"><span class="lab">Présentoir</span><div class="chips">
-        ${!creneauOk(c) ? `<span class="meta">Indique d'abord un horaire valide.</span>` : reglages.presentoirs.map(p => { const r = resaSur(p.id, P.jour, c);
-          return r ? `<button type="button" class="chip" disabled>${esc(p.nom)} · pris (${esc(r.nom)})</button>`
-                   : `<button type="button" class="chip" data-action="pick" data-field="rpid" data-v="${p.id}" aria-pressed="${P.pid === p.id}">${esc(p.nom)}</button>`; }).join("")}
+        ${!creneauOk(c) ? `<span class="meta">Indique d'abord un horaire valide.</span>` : reglages.presentoirs.map(p => { const r = resaSur(p.id, P.jour, c), x = indispoSur(p.id, P.jour, c);
+          if (r) return `<button type="button" class="chip" disabled>${esc(p.nom)} · pris (${esc(r.nom)})</button>`;
+          if (x && !isAdmin()) return `<button type="button" class="chip" disabled>${esc(p.nom)} · indisponible (${esc(libelleIndispo(x))})</button>`;
+          return `<button type="button" class="chip" data-action="pick" data-field="rpid" data-v="${p.id}" aria-pressed="${P.pid === p.id}">${esc(p.nom)}${x ? " · normalement indisponible" : ""}</button>`; }).join("")}
       </div></div>
       <div class="field"><span class="lab">Noms (touche chaque personne du créneau)</span>
         <div class="chips">${[...reglages.proclamateurs].sort((a, b) => a.localeCompare(b, "fr")).map(n => `<button type="button" class="chip" data-action="pick" data-field="noms" data-v="${esc(n)}" aria-pressed="${P.noms.includes(n)}">${esc(n)}</button>`).join("")}
@@ -438,6 +455,7 @@ function renderPanel() {
       <div class="field"><label for="f-date">Jour</label><input type="date" id="f-date" value="${P.date}"></div>
       ${champHeure(P, slots)}
       ${(() => { const c = effCreneau(P); const r = P.pid && creneauOk(c) && resaSur(P.pid, P.date, c); return r && !estDe(r, P.qui) ? `<div class="alerte">Ce présentoir est réservé par <b>${esc(r.nom)}</b> sur ce créneau. Vérifie avec cette personne avant de le prendre.</div>` : ""; })()}
+      ${(() => { const x = P.pid && indispoSur(P.pid, P.date, effCreneau(P)); return x ? `<div class="alerte">${esc(nomP(P.pid))} est normalement indisponible sur cette plage (${esc(libelleIndispo(x))}).</div>` : ""; })()}
       <div class="field"><span class="lab">Pris par</span>${nameChips(P.qui, "qui")}
         <input type="text" id="f-qui" placeholder="Autre nom (prénom nom)" value="${reglages.proclamateurs.includes(P.qui) ? "" : esc(P.qui)}" autocomplete="off"></div>
       <div class="field"><label for="f-note">Remarque (facultatif)</label><textarea id="f-note" placeholder="Ex. : manque des tracts, roue qui grince…">${esc(P.note)}</textarea></div>
@@ -490,6 +508,7 @@ function renderWeek() {
         if (r) return `<div class="ligne none">${tag}réservé à ${esc(nomLieu(r.gare))}</div>`;
         if (mv) return `<div class="ligne">${tag}${esc(mv.pris_par)} · sorti</div>`;
         if (fini) return `<div class="ligne none">${tag}libre</div>`;
+        if (indispoSur(p.id, key, s)) { if (isAdmin()) libres++; return `<div class="ligne none">${tag}indisponible</div>`; }
         libres++;
         return `<div class="ligne">${tag}<span class="libre-txt">libre</span></div>`;
       }).join("");
@@ -566,6 +585,16 @@ function renderSettings() {
       ${reglages.presentoirs.map(p => `<input type="text" id="nom-${p.id}" value="${esc(p.nom)}" aria-label="Nom de ${esc(p.nom)}">`).join("")}
       <div class="row"><button class="btn small" data-action="save-noms">Enregistrer les noms</button></div>
     </div>
+    <div class="field"><span class="lab">Indisponibilités chaque semaine</span>
+      <div class="chips">${reglages.indispos.map((x, i) => `<span class="chip">${esc(nomP(x.presentoir))} · ${esc(libelleIndispo(x))}<button class="x" type="button" data-action="rm-indispo" data-v="${i}" aria-label="Retirer cette indisponibilité">×</button></span>`).join("") || `<span class="meta">Aucune.</span>`}</div>
+      <div class="row">
+        <select id="ind-p" aria-label="Présentoir">${reglages.presentoirs.map(p => `<option value="${p.id}">${esc(p.nom)}</option>`).join("")}</select>
+        <span class="meta">du</span><select id="ind-dj" aria-label="Jour de début">${[1, 2, 3, 4, 5, 6, 0].map(j => `<option value="${j}">${JOURS[j]}</option>`).join("")}</select><input type="time" id="ind-dh" value="18:00" aria-label="Heure de début">
+        <span class="meta">au</span><select id="ind-aj" aria-label="Jour de fin">${[1, 2, 3, 4, 5, 6, 0].map(j => `<option value="${j}">${JOURS[j]}</option>`).join("")}</select><input type="time" id="ind-ah" value="09:00" aria-label="Heure de fin">
+        <button class="btn small" data-action="add-indispo">Ajouter</button>
+      </div>
+      <span class="meta">Pendant ces plages, les proclamateurs ne peuvent pas réserver ce présentoir. Toi, tu le peux encore si besoin.</span>
+    </div>
     <div class="field"><span class="lab">Autres lieux proposés</span>
       <div class="chips">${reglages.lieux.map(n => `<span class="chip">${esc(n)}<button class="x" type="button" data-action="rm-lieu" data-v="${esc(n)}" aria-label="Retirer ${esc(n)}">×</button></span>`).join("") || `<span class="meta">Aucun autre lieu.</span>`}</div>
       <div class="row"><input type="text" id="new-lieu" maxlength="60" placeholder="Ajouter un lieu" style="flex:1;min-width:0"><button class="btn small" data-action="add-lieu">Ajouter</button></div>
@@ -634,7 +663,7 @@ document.addEventListener("click", async (ev) => {
   else if (a === "open-retour") ouvrirRetour(t.dataset.pid);
   else if (a === "close") { ui.panel = null; renderPanel(); }
   else if (a === "slot") {
-    const libre = reglages.presentoirs.find(p => !resaSur(p.id, t.dataset.d, t.dataset.s));
+    const libre = reglages.presentoirs.find(p => reservable(p.id, t.dataset.d, t.dataset.s));
     ui.panel = { type: "resa", gare: t.dataset.g, jour: t.dataset.d, creneau: t.dataset.s, pid: libre ? libre.id : null, noms: moi ? [moi] : [] };
     montrerPanel();
   } else if (a === "resa-libre") {
@@ -658,7 +687,7 @@ document.addEventListener("click", async (ev) => {
     else if (f === "lieu") {
       P.gare = v; const i = $("f-lieu"); if (i) i.value = "";
       P.creneau = P.type === "sortie" ? suggestSlot(v, dateFromYmd(P.date)) : creneauDefaut(v, P.jour);
-      if (P.type === "resa") P.pid = (reglages.presentoirs.find(p => creneauOk(effCreneau(P)) && !resaSur(p.id, P.jour, effCreneau(P))) || {}).id || null;
+      if (P.type === "resa") P.pid = (reglages.presentoirs.find(p => creneauOk(effCreneau(P)) && reservable(p.id, P.jour, effCreneau(P))) || {}).id || null;
     }
     else if (f === "creneau") P.creneau = v;
     else if (f === "qui") { P.qui = v; const i = $("f-qui"); if (i) i.value = ""; }
@@ -684,6 +713,12 @@ document.addEventListener("click", async (ev) => {
   } else if (a === "add-name") {
     const n = $("new-name").value.trim(); if (!n || reglages.proclamateurs.includes(n)) return;
     await action("pres_reglages_maj", { p_contenu: { ...reglages, proclamateurs: [...reglages.proclamateurs, n] } });
+  } else if (a === "add-indispo") {
+    const x = { presentoir: $("ind-p").value, deJour: Number($("ind-dj").value), deH: $("ind-dh").value, aJour: Number($("ind-aj").value), aH: $("ind-ah").value };
+    if (!x.deH || !x.aH || minSemaine(x.deJour, x.deH) === minSemaine(x.aJour, x.aH)) { banner("Indique deux moments différents pour le début et la fin."); return; }
+    await action("pres_reglages_maj", { p_contenu: { ...reglages, indispos: [...reglages.indispos, x] } });
+  } else if (a === "rm-indispo") {
+    await action("pres_reglages_maj", { p_contenu: { ...reglages, indispos: reglages.indispos.filter((_, i) => i !== Number(t.dataset.v)) } });
   } else if (a === "add-lieu") {
     const n = $("new-lieu").value.trim().slice(0, 60); if (!n || tousLieux().includes(n)) return;
     await action("pres_reglages_maj", { p_contenu: { ...reglages, lieux: [...reglages.lieux, n] } });
@@ -765,7 +800,7 @@ document.addEventListener("submit", async (ev) => {
   if (P.type === "resa") {
     const autre = ($("f-autre")?.value || "").trim().slice(0, 80);
     if (autre && !P.noms.includes(autre)) P.noms.push(autre);
-    if (!P.pid) { showErr("Choisis un présentoir libre."); return; }
+    if (!P.pid || !reservable(P.pid, P.jour, effCreneau(P))) { showErr("Choisis un présentoir libre sur cet horaire."); return; }
     if (!P.noms.length) { showErr("Touche au moins un nom."); return; }
   }
   if (P.type === "sortie" && !P.pid) { showErr("Choisis le présentoir que tu prends."); return; }
