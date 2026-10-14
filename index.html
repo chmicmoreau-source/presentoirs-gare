@@ -215,7 +215,7 @@ details.settings[open] summary { margin-bottom: 12px; }
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="config.js?v=202610141333"></script>
+<script src="config.js?v=202610141349"></script>
 <script>
 // Planning relevé dans JW Scheduler (semaine du 12 octobre 2026). Clé = jour JS (0 = dimanche).
 const PLANNING = {
@@ -297,7 +297,8 @@ function indispoSur(pid, jour, s) {
   }) || null;
 }
 const reservable = (pid, jour, s) => !resaSur(pid, jour, s) && (isAdmin() || !indispoSur(pid, jour, s));
-const libelleIndispo = (x) => `${JOURS[x.deJour]} ${x.deH.replace(":00", " h").replace(":", " h ")} → ${JOURS[x.aJour]} ${x.aH.replace(":00", " h").replace(":", " h ")}`;
+const heureCourte = (h) => { const [a, b] = h.split(":"); return `${Number(a)} h${b === "00" ? "" : " " + b}`; };
+const libelleIndispo = (x) => `${JOURS[x.deJour]} ${heureCourte(x.deH)} → ${JOURS[x.aJour]} ${heureCourte(x.aH)}`;
 function enRetard(m) {
   if (!m || !creneauOk(m.creneau)) return false;
   const end = dateFromYmd(m.date); end.setMinutes(toMin(m.creneau.split("-")[1]) + 45);
